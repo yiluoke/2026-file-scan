@@ -1,0 +1,19 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+
+# Source documents, generated artifacts, and logs
+/data/
+/artifacts/
+/logs/
+
+# Python local environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# macOS metadata
+.DS_Store
