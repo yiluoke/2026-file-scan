@@ -1,0 +1,30 @@
+# 機密情報のない同梱サンプルで、DB登録まで確認するための設定です。
+# 相対パスは、実行したディレクトリではなくこの設定ファイルの場所が基準です。
+knowledge_id: demo
+system_id: demo-system
+environment: sample
+
+# SQLiteは手元の動作確認用。本番・共有利用はPostgreSQLを使います。
+# FILE_SCAN_DATABASE_URLを設定すると、以下の値より環境変数が優先されます。
+database_url: sqlite:///data/file_scan.sqlite3
+storage_dir: artifacts/storage
+report_dir: artifacts/reports
+
+sources:
+  - source_id: demo-documents
+    root: examples/input
+    recursive: true
+    exclude_directories: [旧版/]
+    exclude_filenames: ['~$*', '*.tmp', '*_作業中.*']
+
+include_extensions: ['.txt', '.md', '.py', '.xlsx', '.xlsm', '.docx', '.pdf']
+max_file_bytes: 104857600
+copy_retries: 2
+parse_timeout_seconds: 120
+
+# nativeはpypdfの軽量文字抽出。doclingは追加パッケージ・モデルが必要です。
+pdf_backend: native
+include_hidden: false
+
+# 第1版はEmbedding未選定のため、トークン数ではなくUnicode文字数で制限します。
+chunk_max_characters: 1800

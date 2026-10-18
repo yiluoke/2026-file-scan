@@ -1,0 +1,21 @@
+# 開発用PostgreSQL向け。パス・収集元ID・ナレッジIDを実環境に合わせてください。
+knowledge_id: demo
+system_id: demo-system
+environment: sample
+# パスワード入りURLはこのファイルへ書かず、FILE_SCAN_DATABASE_URLで渡します。
+database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan
+storage_dir: artifacts/storage
+report_dir: artifacts/reports
+sources:
+  - source_id: demo-documents
+    root: examples/input
+    recursive: true
+    exclude_directories: [旧版/]
+    exclude_filenames: ['~$*', '*.tmp', '*_作業中.*']
+include_extensions: ['.txt', '.md', '.py', '.xlsx', '.xlsm', '.docx', '.pdf']
+pdf_backend: native
+include_hidden: false
+chunk_max_characters: 1800
+max_file_bytes: 104857600
+copy_retries: 2
+parse_timeout_seconds: 120

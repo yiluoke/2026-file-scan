@@ -5,13 +5,17 @@
 | プロジェクト | 2026-file-scan |
 | 作成日 | 2026-10-12 |
 | 設計レベル | 論理設計・カラム／制約／索引の詳細設計案 |
-| 状態 | 未実装。DDL・マイグレーション・DB作成は本資料の対象外 |
+| 状態 | 全体のテーブル設計案。登録に必要な部分を第1版CLIへ実装。実装範囲は下記参照 |
 | 対象DB | 業務検索用PostgreSQL。pgvector・PGroongaの導入を前提とした案 |
 | 関連設計 | [文書変換](01-document-conversion.md)、[検索基盤](02-search-platform.md)、[LLM＋チャット](03-llm-chat.md) |
 
 ## 1. 範囲と設計方針
 
 本資料を、業務検索用DBのテーブル、カラム、キー、制約、索引の正本とする。変換データの意味と識別子の生成規則は文書変換設計、検索APIの契約は検索基盤設計を参照する。
+
+2026-10-18の第1版では、`knowledge_bases`、`documents`、`knowledge_documents`、`artifact_assets`、`document_versions`、`conversion_profiles`、`extraction_generations`、`blocks`、`chunks`、`chunk_blocks`、`asset_occurrences`、`artifact_relations`、`index_jobs`を実装した。実DDLの定義と非破壊のv1移行は`src/file_scan/db.py`、操作手順は[第1版の実装・操作説明](../implementation/first-version.md)を参照する。
+
+実装用補助表として、適用版を管理する`schema_migrations`と、1DBの実体保管先を固定する`ingestion_settings`を追加する。後者は`singleton_id=1`のPK・CHECK、`storage_root text NOT NULL`、共通時刻列を持ち、初回登録時に保管先を設定する。業務リリース、Embedding、ACL、検索監視の表・拡張索引は後続である。未導入のリリース・Embedding参照列はNULLのみとし、公開状態は`draft`、検索範囲は無効、ACLは未同期に制約する。`run_id`等のUUIDは第1版ではUUID文字列をtext列へ格納する。将来の検索公開機能では、移行を追加してこれらの制約を変更する。
 
 - Dify内部DBのテーブルを本システムから直接更新しない。会話履歴の独自DB設計は本資料に含めない。
 - 原本・画像のバイト列はストレージに置き、DBは参照・構造・検索本文・ベクトルを管理する。

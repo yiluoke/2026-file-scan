@@ -7,6 +7,8 @@
 /data/
 /artifacts/
 /logs/
+/var/
+/config.local.yaml
 
 # Python local environment and caches
 .venv/
@@ -14,6 +16,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+*.egg-info/
+/build/
+/dist/
 
 # macOS metadata
 .DS_Store
