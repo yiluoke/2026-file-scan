@@ -17,10 +17,13 @@ dependencies = [
     "pypdf==6.10.0",
     "charset-normalizer==3.5.2",
     "Pillow==12.3.0",
+    "openai==3.37.0",
+    "pgvector==0.5.1",
+    "tiktoken==0.14.0",
+    "docling==2.140.0",
 ]
 
 [project.optional-dependencies]
-docling = ["docling==2.140.0"]
 dev = ["pytest==9.1.1", "ruff==0.17.1", "reportlab==4.4.9"]
 
 [project.scripts]
@@ -28,6 +31,9 @@ file-scan = "file_scan.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+file_scan = ["docling-models.lock.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

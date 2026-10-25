@@ -1,7 +1,8 @@
 """登録MVPのSQLAlchemy Coreスキーマと非破壊マイグレーション。
 
-01の変換モデルと04のDB設計に従う。第1版には検索公開・リリース対応・
-Embedding・ACL同期を含めず、公開状態はdraft、検索範囲は無効に限定する。
+01の変換モデルと04・05のDB設計に従う。
+v2でEmbedding、v3で選択世代・抽出／Embeddingキャッシュを追加する。
+公開状態はdraft、検索範囲は無効に限定し、ACL同期は含めない。
 原本や画像の実体は外部ストレージに置き、このDBには参照だけを格納する。
 """
 
@@ -32,8 +33,9 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.engine import Engine, make_url
+from pgvector.sqlalchemy import Vector
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 metadata = MetaData()
 # SQLiteでも同じCore APIを使う。PostgreSQLでは04のJSONB・text[]に対応する。
@@ -352,6 +354,72 @@ schema_migrations = _table(
     CheckConstraint("version >= 1", name="ck_schema_migrations_version"),
 )
 
+embedding_profiles = _table(
+    "embedding_profiles",
+    Column("embedding_profile_id", Text, primary_key=True),
+    Column("provider", Text, nullable=False),
+    Column("model", Text, nullable=False),
+    Column("dimensions", Integer, nullable=False),
+    Column("input_version", Text, nullable=False),
+    UniqueConstraint("embedding_profile_id", "dimensions", name="uq_embedding_profiles_dimensions"),
+    CheckConstraint("provider = 'openai'", name="ck_embedding_profiles_provider"),
+    CheckConstraint("dimensions > 0", name="ck_embedding_profiles_dimensions"),
+)
+
+chunk_embeddings = _table(
+    "chunk_embeddings",
+    Column("generation_id", Text, primary_key=True),
+    Column("chunk_id", Text, primary_key=True),
+    Column("embedding_profile_id", Text, primary_key=True),
+    Column("dimensions", Integer, nullable=False),
+    Column("embedding", JSON().with_variant(Vector(), "postgresql"), nullable=False),
+    Column("input_hash", Text, nullable=False),
+    Column("input_tokens", Integer, nullable=False),
+    ForeignKeyConstraint(["generation_id", "chunk_id"],
+                         ["chunks.generation_id", "chunks.chunk_id"], ondelete="CASCADE"),
+    ForeignKeyConstraint(["embedding_profile_id", "dimensions"],
+                         ["embedding_profiles.embedding_profile_id", "embedding_profiles.dimensions"]),
+    CheckConstraint("input_tokens > 0", name="ck_chunk_embeddings_tokens"),
+    CheckConstraint("vector_dims(embedding) = dimensions", name="ck_chunk_embeddings_dimensions")
+        .ddl_if(dialect="postgresql"),
+)
+
+selected_generations = _table(
+    "selected_generations",
+    Column("knowledge_id", Text, primary_key=True),
+    Column("document_id", Text, primary_key=True),
+    Column("generation_id", Text, nullable=True),
+    Column("conversion_revision", Text, ForeignKey("conversion_profiles.conversion_revision"), nullable=False),
+    ForeignKeyConstraint(["knowledge_id", "document_id"],
+                         ["knowledge_documents.knowledge_id", "knowledge_documents.document_id"]),
+    ForeignKeyConstraint(["generation_id", "document_id"],
+                         ["extraction_generations.generation_id", "extraction_generations.document_id"]),
+    managed=True,
+)
+
+extraction_cache = _table(
+    "extraction_cache",
+    Column("cache_key", Text, primary_key=True),
+    Column("source_version", Text, ForeignKey("artifact_assets.asset_id"), nullable=False),
+    Column("extraction_revision", Text, nullable=False),
+    _json("payload"),
+    Column("payload_hash", Text, nullable=False),
+)
+
+embedding_cache = _table(
+    "embedding_cache",
+    Column("embedding_profile_id", Text, primary_key=True),
+    Column("input_hash", Text, primary_key=True),
+    Column("dimensions", Integer, nullable=False),
+    Column("embedding", JSON().with_variant(Vector(), "postgresql"), nullable=False),
+    Column("input_tokens", Integer, nullable=False),
+    ForeignKeyConstraint(["embedding_profile_id", "dimensions"],
+                         ["embedding_profiles.embedding_profile_id", "embedding_profiles.dimensions"]),
+    CheckConstraint("input_tokens > 0", name="ck_embedding_cache_tokens"),
+    CheckConstraint("vector_dims(embedding) = dimensions", name="ck_embedding_cache_dimensions")
+        .ddl_if(dialect="postgresql"),
+)
+
 # FK逆引き・段階処理に使う索引。PK/UQで満たす索引は重複させない。
 Index("ix_knowledge_documents_document", knowledge_documents.c.document_id, knowledge_documents.c.included)
 Index("ix_document_versions_asset", document_versions.c.asset_id)
@@ -362,6 +430,8 @@ Index("ix_asset_occurrences_asset", asset_occurrences.c.asset_id)
 Index("ix_artifact_relations_from", artifact_relations.c.from_generation_id, artifact_relations.c.from_block_id, artifact_relations.c.relation_type)
 Index("ix_artifact_relations_to", artifact_relations.c.to_generation_id, artifact_relations.c.to_block_id, artifact_relations.c.relation_type)
 Index("ix_index_jobs_queue", index_jobs.c.status, index_jobs.c.stage, index_jobs.c.created_at)
+Index("ix_chunk_embeddings_input", chunk_embeddings.c.embedding_profile_id, chunk_embeddings.c.input_hash)
+Index("ix_selected_generations_generation", selected_generations.c.generation_id)
 _active_job = index_jobs.c.status.in_(("queued", "running"))
 Index("uq_index_jobs_active", index_jobs.c.job_key, unique=True, postgresql_where=_active_job, sqlite_where=_active_job)
 
@@ -385,6 +455,8 @@ def open_database(url: str) -> Engine:
         def _sqlite_connect(dbapi_connection, _connection_record):
             # pysqliteの暗黙コミットを避け、マイグレーション失敗もrollback可能にする。
             dbapi_connection.isolation_level = None
+            from file_scan.profiles import digest
+            dbapi_connection.create_function("file_scan_input_hash", 1, digest, deterministic=True)
             cursor = dbapi_connection.cursor()
             try:
                 cursor.execute("PRAGMA foreign_keys=ON")
@@ -398,7 +470,7 @@ def open_database(url: str) -> Engine:
 
 
 def migrate(engine: Engine) -> None:
-    """空の管理領域へv1を適用し、適用済みなら変更しない。
+    """v3を初期化、またはv1/v2へ管理表・キャッシュを非破壊で追加する。
 
     未管理の同名表・未知の将来版・適用記録と実表の不一致は自動修復しない。
     drop/createや既存データの書き換えは行わず、運用者による確認を求める。
@@ -406,25 +478,51 @@ def migrate(engine: Engine) -> None:
     with engine.begin() as connection:
         if connection.dialect.name == "postgresql":
             # 同時起動したバッチどうしの初期DDLを直列化するトランザクションロック。
-            connection.execute(text("SELECT pg_advisory_xact_lock(:namespace, :version)"), {"namespace": 20261018, "version": SCHEMA_VERSION})
+            # 旧v1の初期化とも同じキーで排他する。スキーマ版をロックキーに使わない。
+            connection.execute(text("SELECT pg_advisory_xact_lock(:namespace, :version)"), {"namespace": 20261018, "version": 1})
         existing = set(inspect(connection).get_table_names())
         managed = set(tables) - {"schema_migrations"}
         versions = []
         if "schema_migrations" in existing:
             versions = list(connection.execute(select(schema_migrations.c.version)).scalars())
-        if any(version != SCHEMA_VERSION for version in versions):
+        if versions not in ([], [1], [2], [SCHEMA_VERSION]):
             raise RuntimeError("未対応のDBスキーマ版です。自動変更しません")
-        if versions:
+        v2_added = {"embedding_profiles", "chunk_embeddings"}
+        v3_added = {"selected_generations", "extraction_cache", "embedding_cache"}
+        added = v3_added | (v2_added if versions == [1] else set())
+        if versions in ([1], [2]):
+            missing = (set(tables) - added) - existing
+            if missing or existing & added:
+                raise RuntimeError("旧版の移行記録とテーブルが一致しません。自動変更しません")
+        elif versions:
             missing = set(tables) - existing
             if missing:
                 raise RuntimeError("移行記録とテーブルが一致しません: " + ", ".join(sorted(missing)))
             return
-        if existing & managed:
+        if not versions and existing & managed:
             raise RuntimeError("未管理の同名テーブルがあります。自動変更しません")
+        if connection.dialect.name == "postgresql":
+            if not connection.execute(text(
+                "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
+            )).scalar():
+                raise RuntimeError("先に対象DBでCREATE EXTENSION vectorを実行してください")
         # PostgreSQLの後付けFK生成はSQLAlchemy内の作成規則を書き換え得る。
         # 公開するmetadataを保持し、同一プロセスの別DBでも同じ定義を使えるよう複製する。
         migration_metadata = MetaData()
         for table in tables.values():
             table.to_metadata(migration_metadata)
-        migration_metadata.create_all(connection)
-        connection.execute(schema_migrations.insert().values(version=SCHEMA_VERSION))
+        # SQLAlchemyのto_metadataは条件付きDDLの指定を複製しないため再設定する。
+        for name in ("chunk_embeddings", "embedding_cache"):
+            for constraint in migration_metadata.tables[name].constraints:
+                if constraint.name == f"ck_{name}_dimensions":
+                    constraint.ddl_if(dialect="postgresql")
+        if versions in ([1], [2]):
+            migration_metadata.create_all(connection, tables=[migration_metadata.tables[name]
+                                                             for name in sorted(added)])
+            for index in chunk_embeddings.indexes:
+                index.create(connection, checkfirst=True)
+            connection.execute(schema_migrations.update().where(schema_migrations.c.version == versions[0])
+                               .values(version=SCHEMA_VERSION, applied_at=_utcnow()))
+        else:
+            migration_metadata.create_all(connection)
+            connection.execute(schema_migrations.insert().values(version=SCHEMA_VERSION))

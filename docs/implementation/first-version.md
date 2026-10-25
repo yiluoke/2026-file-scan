@@ -1,5 +1,7 @@
 # 文書変換・DB下書き登録 第1版
 
+更新日：2026-10-25。v3の世代選択・キャッシュ・制限値・移行は[取り込み改善設計](../design/05-ingestion-improvements.md)を参照。
+
 ## 1. この版で確認すること
 
 第1版は、指定フォルダから文書を収集し、検索基盤へ渡す前の下書きを作るバッチCLIである。実ファイルを使って、全シート・ページを処理できるか、原本位置へ戻れるか、表や見出しが保持されるか、取り込めない箇所を識別できるかを確認する。
@@ -12,7 +14,7 @@
          → 品質レポートと確認用ファイルの出力
 ```
 
-文書の公開状態は`draft`のみ。抽出成功の`succeeded`は、公開承認や内容の正しさの保証を意味しない。Embedding、全文・ベクトル検索、検索API、Dify、LLM回答、利用者別ACL、公開レビューの画面はこの版に含まれない。
+文書の公開状態は`draft`のみ。抽出成功の`succeeded`は、公開承認や内容の正しさの保証を意味しない。追加した`embed`コマンドはOpenAI Embeddings APIとpgvector保存に対応する。全文・ベクトル検索API、Dify、LLM回答、利用者別ACL、公開レビューの画面は未実装。
 
 ## 2. 導入と設定
 
@@ -27,22 +29,25 @@ cp config.example.yaml config.local.yaml
 
 Windows PowerShellでは有効化コマンドを`.venv\Scripts\Activate.ps1`に置き換え、設定ファイルをコピーする。Windows実機での動作は未検証。
 
-[`config.example.yaml`](../../config.example.yaml)はローカルSQLite用、[`config.postgresql.example.yaml`](../../config.postgresql.example.yaml)はPostgreSQL用である。実際の収集先と接続情報を含む設定は、Git対象外の`config.local.yaml`等で管理する。
+[`config.example.yaml`](../../config.example.yaml)と[`config.postgresql.example.yaml`](../../config.postgresql.example.yaml)は、どちらもローカルPostgreSQL＋pgvector用である。[ローカルDBの導入手順](local-postgresql.md)に従って先にDBを起動する。実際の収集先と接続情報を含む設定は、Git対象外の`config.local.yaml`等で管理する。
 
-SQLiteの設定例は、同梱の架空サンプル`examples/input/`をそのまま試せる。DBは`data/file_scan.sqlite3`、実体は`artifacts/storage`、確認ファイルは`artifacts/reports`に作る。SQL・JSON・YAML・YML・CSV・LOGも収集する場合は、設定例の`include_extensions`に追加する。
+標準設定例は、`python scripts/download_samples.py`で公開サンプルを配置する`data/file-server/department/`を仮想ファイルサーバーとして使う。DBはローカルPostgreSQLの`file_scan`、実体は`artifacts/storage`、確認ファイルは`artifacts/reports`に作る。SQL・JSON・YAML・YML・CSV・LOGも収集する場合は、設定例の`include_extensions`に追加する。
 
 | 設定 | 意味と初期値 |
 | --- | --- |
 | `sources` | 収集元の一覧。`source_id`、`root`、`recursive`、除外条件を指定 |
 | `knowledge_id` | ナレッジの識別子。同じIDの`system_id`・`environment`は後から変更しない |
-| `database_url` | DB接続文字列。SQLiteまたはPostgreSQLを使用 |
+| `database_url` | DB接続文字列。既定はローカルPostgreSQL。SQLiteは単体テスト等で明示指定可能 |
 | `database_url_env` | 接続文字列を読む環境変数名。標準は`FILE_SCAN_DATABASE_URL` |
 | `storage_dir` | 原本コピー・画像の保管先。1個のDBに対して固定 |
 | `report_dir` | 実行レポートと世代別確認ファイルの出力先 |
 | `include_extensions` | 収集する拡張子。対応形式に限って指定する |
 | `include_hidden` | 既定は`false`。隠しファイル・フォルダ、Excelの非表示部分の取り込みも制御 |
-| `pdf_backend` | `native`が既定。追加依存を導入した場合は`docling`も指定可能 |
-| `chunk_max_characters` | チャンク本文の暫定文字数上限。既定`1800`、最小`100` |
+| `pdf_backend` | `docling`が既定。`native`を明示すると軽量なpypdf本文抽出 |
+| `docling_artifacts_path` | 事前取得したDoclingモデルの配置先。既定`data/models/docling` |
+| `chunk_max_characters` | チャンク本文の文字数上限。既定`1800`、最小`100` |
+| `chunk_max_tokens` / `chunk_context_max_tokens` | 検索入力全体と検索文脈のトークン上限。既定`8191` / `1024` |
+| `parse_workers` / `parse_worker_max_tasks` / `parse_worker_max_memory_mb` | 再利用する解析プロセスの上限、交換タスク数、処理後ピークメモリ閾値。既定`1` / `100` / `1536` |
 | `max_file_bytes` | 原本サイズ上限。既定`104857600`、100 MiB |
 | `copy_retries` | コピー中に原本が変わった場合の再試行回数。既定`2` |
 | `parse_timeout_seconds` | 文書1件の抽出時間上限。既定`120`秒 |
@@ -69,9 +74,9 @@ file-scan scan --config config.local.yaml
 file-scan init-db --config config.local.yaml
 ```
 
-空の管理領域へスキーマv1を作成する。適用済みの場合はそのまま利用する。未管理の同名表、未知のスキーマ版、移行記録と実表の不一致は自動修復しない。既存データの削除や検索公開は行わない。
+空の管理領域へスキーマv3を作成する。既存v1/v2には選択世代・抽出キャッシュ・Embeddingキャッシュを追加し、v1にはEmbedding用の2表も追加して既存データを保持する。v3適用済みの場合はそのまま利用する。移行後はingestで選択中世代を確定してからembedする。未管理の同名表、未知のスキーマ版、移行記録と実表の不一致は自動修復しない。既存データの削除や検索公開は行わない。
 
-SQLiteはローカル検証用であり、ファイルサーバー上の共有SQLiteを複数利用者で使わない。部署での継続利用を検証する場合はPostgreSQLを選ぶ。
+ローカル検証は本番と同じPostgreSQL＋pgvectorで行う。SQLite対応は単体テスト等のために残している。
 
 ### 3.3 抽出と下書き登録
 
@@ -91,7 +96,7 @@ DBの排他制御で同時登録を制限し、コピーや抽出の間に長時
 file-scan status --config config.local.yaml
 ```
 
-文書数、棚卸し状態、処理状態別の変換世代数等をJSONで出す。世代の集計は過去の変換世代も含むため、最新文書だけの成功件数とは異なる。確認が必要な文書は実行レポートと世代別の確認ファイルから調べる。
+現在の文書数・選択世代の状態を`documents`・`generations`へ、過去世代を`historical_generations`へ分けて表示する。プロファイル別の現在のEmbedding済み・未処理チャンク数は`embeddings`へ出す。確認が必要な文書は実行レポートと世代別の確認ファイルから調べる。
 
 ## 4. 保存されるもの
 
@@ -141,6 +146,7 @@ DBの抽出本文、レポート、確認用Markdownも社内情報を含む。�
 | PY | ASTのトップレベル関数・クラス、その前後のコード、行位置 | 実行しない。構文不正時は原文と警告を保持 |
 | XLSX・XLSM | 全シート棚卸し、行・セル、結合、見出し候補、数式、保存済み結果、画像アンカー | 完全な表示形式・任意帳票の意味解析は行わない。複雑な数式、図形・グラフ、VBA等は警告 |
 | DOCX | OOXMLの本文順、見出し・継承、表、目次リンクと本文の対応、画像、段落・表位置 | 表示ページ・浮動図形のレイアウト再現は行わない。自動番号、変更履歴、未対応の補助本文等を警告 |
+| PDF Docling（標準） | 実モデルのレイアウト・読み順・本文・表構造・bbox、図の領域画像 | CPU固定・OCRなし。モデル事前配置が必要。画像の意味解析は後続 |
 | PDF native | pypdfの文字レイヤー、ページ位置、画像 | OCRなし。段組み・表・図の完全復元や正確な矩形座標は未対応 |
 
 Excelの数式文字列と保存済み計算結果は別に保持し、再計算やマクロ実行は行わない。保存済み結果がない場合は空欄と区別する。非表示部分は既定で本文へ取り込まないが、対象外であることを棚卸し情報に残す。
@@ -155,13 +161,13 @@ Officeパッケージの展開後容量512 MiB、XML部品128 MiB、部品数20,
 
 文書の親・節・内容の由来が同じ要素だけをまとめ、改行や空白を優先して分割する。チャンクには本文の文字範囲と原本ブロックの文字範囲を保持する。見出しパスやExcelの列見出し等を加えた`search_text`は、根拠となる`content_text`と分ける。
 
-モデル未選定のため、`chunk_max_characters: 1800`はUnicode文字数による暫定的な本文上限である。トークン数を推測せず、`token_count`はNULLで保存する。設計検討で挙げた400〜800トークン等のPoC目安とは別であり、埋め込みモデルの選定後にトークナイザーでの分割へ変更する。
+`chunk_max_characters: 1800`はUnicode文字数による本文上限。加えて、見出し・列見出しを含む検索入力全体を`chunk_max_tokens: 8191`以下に分割し、cl100k_baseの実測値を`token_count`へ保存する。Doclingの表は行境界を優先し、検索用文脈へ列見出しを引き継ぐ。文脈は`chunk_context_max_tokens: 1024`以内とし、長大な場合の省略は品質フラグで記録する。
 
 原本位置・親子関係・チャンク本文と原文の対応を保存前に検査する。文書に品質警告や解析待ち画像がある場合は`processing_status=partial`とし、正常抽出の`succeeded`と区別する。
 
 ## 7. 再実行・更新・削除
 
-原本の内容ハッシュと変換設定・実装・依存バージョンから変換世代を識別する。同じ入力と同じ条件なら、既存の正常世代を再利用する。既存実体の再利用時にも整合を検査する。
+原本の内容ハッシュと形式別の変換設定・実装・依存バージョンから変換世代を識別する。同じ入力と同じ条件なら既存世代を再利用し、選択中世代を明示する。抽出キャッシュは分割設定から独立させ、分割だけの変更では再抽出しない。既存実体の再利用時にも整合を検査する。変更のない原本は完全ハッシュ照合を維持し、一時コピーだけを省略する。
 
 既存の部分抽出も通常は再利用する。同じ条件で抽出を再試行する場合に限り、次を使う。
 
@@ -177,42 +183,17 @@ file-scan ingest --config config.local.yaml --retry-partial
 
 ### 8.1 PostgreSQL
 
-ローカル検証用の[`compose.yaml`](../../compose.yaml)、接続例の[`.env.example`](../../.env.example)、[`config.postgresql.example.yaml`](../../config.postgresql.example.yaml)を参照する。ComposeのDBを使用する場合も、CLIから`init-db`を実行してから`ingest`を行う。
-
-```sh
-cp .env.example .env
-cp config.postgresql.example.yaml config.local.yaml
-```
-
-`.env`内の`POSTGRES_PASSWORD`を設定し、`FILE_SCAN_DATABASE_URL`内の`PASSWORD`も同じパスワードに置き換える。接続URLで使うパスワードに`@`等の予約文字が含まれる場合は、URL側でパーセントエンコードする。次はmacOS／Linuxで、編集済み`.env`をシェルへ読み込む例である。
-
-```sh
-set -a
-source .env
-set +a
-docker compose up -d db
-docker compose ps
-```
-
-`db`がhealthyになったことを確認し、`file-scan init-db --config config.local.yaml`から実行する。ComposeのDB名・ユーザー名は`file_scan`、接続先は`127.0.0.1:5432`である。パスワードはComposeの環境変数で渡し、DBサービスはホストのループバックアドレスにだけ公開する。
+[ローカルPostgreSQL＋pgvectorの導入手順](local-postgresql.md)を参照する。Postgres.appまたはComposeでPostgreSQL 18とpgvector 0.8.6を用意し、アプリ用の`file_scan`とテスト用の`file_scan_test`を分ける。DB起動・拡張有効化後、CLIから`init-db`を実行してから`ingest`を行う。
 
 `FILE_SCAN_DATABASE_URL`が設定されていれば、YAMLの`database_url`より優先する。独自の`database_url_env`も指定できるが、標準の`FILE_SCAN_DATABASE_URL`が両者より優先する。Python CLIは`.env`ファイルを自動読込しないため、シェルまたは実行環境の仕組みで環境変数を渡す。
 
-既存の部署DBでは専用の検証用データベースを用意する。第1版のDB初期化にはpgvectorやPGroongaの導入を必要としない。
+第1版の`init-db`は登録用スキーマを作成する。vector拡張の導入・有効化はDBの構築時に行う。OpenAI Embeddingの設定・実行は[専用手順](openai-embedding.md)を参照する。検索API・PGroongaは未実装。
 
-### 8.2 Doclingの任意追加
+### 8.2 Doclingによる標準PDF抽出
 
-```sh
-python -m pip install -e '.[docling]'
-```
+Doclingは通常の依存に含め、`pdf_backend: docling`を標準とする。初回に`python scripts/download_docling_models.py --config config.local.yaml`でレイアウト・表構造の実モデルを取得する。配置先は`docling_artifacts_path`で指定する。
 
-```yaml
-pdf_backend: docling
-```
-
-DoclingはCPU固定、OCR無効、外部画像説明サービス無効で使う。表や本文の構造抽出を追加する経路であり、スキャンPDFを自動で読める設定ではない。画像の実体保存と文字なしページの検出は軽量経路と併用する。
-
-依存不足や変換失敗は明確に失敗とし、`native`へ自動フォールバックしない。実モデルによる変換は未検証であり、初回はモデル取得、事前配置、タイムアウト値の調整が必要になる場合がある。通常の取り込み処理は文書や画像を外部LLM／OCR／画像APIへ送信しない。
+本文・見出し・表・bboxをDoclingから抽出する。原画像の保存にはpypdfも使用するが、本文の代替には使わない。CPU固定・OCR無効・外部サービス無効で実行し、文字なしページはOCR待ちとして記録する。公開PDF2件の実モデル検証は[Doclingの手順](docling-pdf.md)を参照。
 
 ## 9. 終了コードと確認手順
 
@@ -231,19 +212,15 @@ DoclingはCPU固定、OCR無効、外部画像説明サービス無効で使う�
 処理目的を説明する日本語docstring・コメントを起点に読む。モジュールを追う順序は[READMEの一覧](../../README.md#コードを読む順序)を参照する。個々のデータがどの段階で作られるかは、`domain.py`と`pipeline.py`を並べて確認すると分かりやすい。
 
 ```sh
-python -m pytest
-python -m ruff check src tests
-```
-
-実PostgreSQLで同じ登録テストを行う場合は、テスト専用の接続先を`FILE_SCAN_TEST_DATABASE_URL`へ設定する。テストごとにランダムなschemaを作成・削除するため、本番接続先は使わない。ローカルにDBがない場合の開発補助も用意している。
-
-```sh
-python -m pip install pgserver==0.1.4
+set -a
+source .env
+set +a
 python scripts/test_postgres.py
+python -m ruff check src tests scripts
 ```
 
-この補助スクリプトは一時PostgreSQLを起動してテストし、終了時に停止する。`pgserver`は本体の依存ではなく、実行環境に対応するバイナリが必要となる。通常の`pytest`では、テスト用接続先が未指定ならPostgreSQL固有の実接続テストをスキップする。
+`FILE_SCAN_TEST_DATABASE_URL`にテスト専用DBを指定する。補助スクリプトはインストール済みPostgreSQLとpgvectorを確認し、ベクトル演算・HNSW索引と既存のテストを実行する。取り込みテストはランダムなschemaを作成・削除するため、本番接続先は使わない。pgserverによる一時PostgreSQLの起動は行わない。通常の`python -m pytest`では、テスト用接続先が未指定なら実接続テストをスキップする。
 
-テストは小さな原本を生成し、複数シート、数式と保存済み結果、Wordの順序・目次・画像、Pythonを実行しないこと、画像PDFを成功扱いしないこと、再実行、DBの制約等を検証する。社内実ファイル、Windows実機、実ファイルサーバー、Docling実モデルを使う受入検証は別途行う。
+テストは小さな原本を生成し、複数シート、数式と保存済み結果、Wordの順序・目次・画像、Pythonを実行しないこと、画像PDFを成功扱いしないこと、再実行、DBの制約等を検証する。公開8原本・実Doclingモデル・実PostgreSQLは自動検証する。社内実ファイル、Windows実機、実ファイルサーバー、本物のOpenAI APIキーによる品質・料金の受入検証は別途行う。
 
 原本、抽出本文、画像、ログ、確認用ファイル、ローカルDB、接続情報はGitへ登録しない。`.gitignore`で`data/`、`artifacts/`、`logs/`、`var/`、`config.local.yaml`、`.env`等を除外する。任意の別パスをリポジトリ内へ追加する場合は、そのパスも除外する。

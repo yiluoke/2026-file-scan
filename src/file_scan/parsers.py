@@ -15,6 +15,7 @@ import re
 import tokenize
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 from zipfile import ZipFile
@@ -46,8 +47,9 @@ def parse_file(
     path: Path,
     file_format: str,
     *,
-    pdf_backend: str = "native",
+    pdf_backend: str = "docling",
     include_hidden: bool = False,
+    docling_artifacts_path: Path = Path("data/models/docling"),
 ) -> ExtractionResult:
     """形式に応じて抽出する。未対応形式や読めない原本は例外にする。
 
@@ -70,7 +72,8 @@ def parse_file(
     elif fmt == "docx":
         result = _parse_word(path)
     elif fmt == "pdf":
-        result = _parse_pdf_docling(path) if pdf_backend == "docling" else _parse_pdf_native(path)
+        result = (_parse_pdf_docling(path, docling_artifacts_path)
+                  if pdf_backend == "docling" else _parse_pdf_native(path))
     else:
         raise ValueError(f"第1版では未対応の形式です: {file_format}")
     if not any(b.content_text and b.content_text.strip() for b in result.blocks):
@@ -716,6 +719,28 @@ def _parse_word(path: Path) -> ExtractionResult:
     return result
 
 
+def _pdf_original_images(page, page_index: int, result: ExtractionResult) -> None:
+    """PDF内の原画像を保持する補助。本文・表の抽出は行わない。"""
+    location = {"format": "pdf", "page_number": page_index,
+                "coordinate_system": "pdf_bottom_left", "rotation": int(page.get("/Rotate", 0))}
+    page_id = f"pdf-page-{page_index}"
+    try:
+        for image_index, image in enumerate(page.images, 1):
+            image_location = dict(location, image_index=image_index, image_name=image.name, position_status="page_only")
+            image_id = f"{page_id}-image-{image_index}"
+            result.assets.append(ExtractedAsset(
+                block_id=image_id, content=image.data, mime_type=mimetypes.guess_type(image.name)[0] or "application/octet-stream",
+                source_locations=[image_location],
+            ))
+            result.blocks.append(Block(
+                block_id=image_id, element_type="figure", content_text=None, source_locations=[image_location], parent_id=page_id,
+                quality_flags=["image_analysis_pending", "pdf_image_position_unavailable"], extraction_method="pypdf_original_image",
+            ))
+            result.pending_images += 1
+    except Exception:
+        _flag(result, "pdf_image_extraction_failed")
+
+
 def _parse_pdf_native(path: Path) -> ExtractionResult:
     """文字レイヤーを読む軽量ルート。OCRや表・図の意味解析は行わない。"""
     try:
@@ -750,21 +775,7 @@ def _parse_pdf_native(path: Path) -> ExtractionResult:
             source_locations=[location], quality_flags=flags, extraction_method="pypdf_native",
             content_data={"title": f"ページ{page_index}", "layout_analysis": False},
         ))
-        try:
-            for image_index, image in enumerate(page.images, 1):
-                image_location = dict(location, image_index=image_index, image_name=image.name, position_status="page_only")
-                image_id = f"{page_id}-image-{image_index}"
-                result.assets.append(ExtractedAsset(
-                    block_id=image_id, content=image.data, mime_type=mimetypes.guess_type(image.name)[0] or "application/octet-stream",
-                    source_locations=[image_location],
-                ))
-                result.blocks.append(Block(
-                    block_id=image_id, element_type="figure", content_text=None, source_locations=[image_location], parent_id=page_id,
-                    quality_flags=["image_analysis_pending", "pdf_image_position_unavailable"], extraction_method="pypdf_native",
-                ))
-                result.pending_images += 1
-        except Exception:
-            _flag(result, "pdf_image_extraction_failed")
+        _pdf_original_images(page, page_index, result)
         try:
             contents = page.get_contents()
             if contents is not None and any(op in {b"m", b"l", b"c", b"re", b"S", b"s", b"f", b"f*", b"B", b"B*"} for _, op in ContentStream(contents, reader).operations):
@@ -775,68 +786,132 @@ def _parse_pdf_native(path: Path) -> ExtractionResult:
     return result
 
 
-def _parse_pdf_docling(path: Path) -> ExtractionResult:
-    """CPU固定・OCRなしでDoclingの構造抽出を使う、任意の追加ルート。
-
-    モデルの事前配置が必要な環境もある。依存不足や変換失敗を軽量ルートの
-    成功に置き換えない。画像説明等の外部サービスは有効にしない。
-    """
+@lru_cache(maxsize=2)
+def _docling_converter(artifacts_path: Path, model_fingerprint: str, converter_type):
     try:
         from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import PdfPipelineOptions
-        from docling.document_converter import DocumentConverter, PdfFormatOption
+        from docling.document_converter import PdfFormatOption
     except ImportError as exc:
-        raise ParserDependencyError("pdf_backend='docling'には追加依存doclingが必要です。docling extraを導入してください") from exc
-    options = PdfPipelineOptions()
+        raise ParserDependencyError("pdf_backend='docling'にはDoclingが必要です。プロジェクトの依存を導入してください") from exc
+    options = PdfPipelineOptions(artifacts_path=artifacts_path)
     options.do_ocr = False
     options.do_table_structure = True
+    options.generate_picture_images = True
     options.do_picture_description = False
     options.do_picture_classification = False
     options.enable_remote_services = False
     options.allow_external_plugins = False
-    options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU)
-    converter = DocumentConverter(format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
+    options.accelerator_options = AcceleratorOptions(device=AcceleratorDevice.CPU, num_threads=2)
+    return converter_type(allowed_formats=[InputFormat.PDF], format_options={
+        InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
+
+
+def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
+    """検査済みの固定モデルとプロセス内のConverterを再利用する。"""
+    from file_scan.models import verify_models
+    try:
+        from docling.document_converter import DocumentConverter
+    except ImportError as error:
+        raise ParserDependencyError("pdf_backend='docling'にはDoclingが必要です") from error
+
+    artifacts_path = Path(artifacts_path).resolve()
+    if not (artifacts_path / "model-manifest.json").is_file():
+        raise ParserDependencyError(
+            "Doclingモデルが未配置です。python scripts/download_docling_models.pyを実行してください")
+    fingerprint = verify_models(artifacts_path)
+    converter = _docling_converter(artifacts_path, fingerprint, DocumentConverter)
     converted = converter.convert(path)
     status = str(getattr(converted.status, "value", converted.status)).lower()
     if status not in {"success", "partial_success"}:
-        raise ValueError(f"DoclingによるPDF変換が完了しませんでした: {status}")
+        raise ValueError("DoclingによるPDF変換が完了しませんでした")
     document = converted.document
-    # 画像の実体はpypdfで保存し、OCRを無効にしたページの不足も引き継ぐ。
-    result = _parse_pdf_native(path)
-    result.metrics["pdf_backend"] = "docling"
-    for block in result.blocks:
-        if block.element_type != "figure":
-            block.element_type = "page"
-            block.content_text = None
-    if status == "partial_success":
+    page_count = converted.input.page_count
+    result = ExtractionResult(metrics={
+        "pdf_backend": "docling", "ocr_enabled": False, "device": "cpu",
+        "pages_total": page_count, "pages_processed": len(converted.pages),
+        "tables": 0, "pictures": 0, "layout_analysis": True,
+    })
+    if status == "partial_success" or converted.errors:
         _flag(result, "docling_partial_conversion")
+    if len(converted.pages) != page_count:
+        _flag(result, "docling_incomplete_pages")
+    for page_no in range(1, page_count + 1):
+        page = document.pages.get(page_no)
+        result.blocks.append(Block(
+            block_id=f"pdf-page-{page_no}", element_type="page", content_text=None,
+            source_locations=[{"format": "pdf", "page_number": page_no}],
+            content_data={"size": page.size.model_dump(mode="json") if page else None},
+            extraction_method="docling_cpu_ocr_disabled",
+        ))
     section: list[str] = []
+    text_pages: set[int] = set()
     for index, (item, _) in enumerate(document.iterate_items(), 1):
         label = str(getattr(getattr(item, "label", None), "value", getattr(item, "label", "")))
-        if label == "picture":
-            continue
-        text = getattr(item, "text", None)
-        data: dict[str, Any] = {"docling_label": label}
-        if label == "table":
-            text = item.export_to_markdown(doc=document)
-            data["table"] = item.data.model_dump(mode="json")
-        if not text or not text.strip():
-            continue
         locations: list[dict[str, Any]] = []
         for provenance in getattr(item, "prov", []):
             loc: dict[str, Any] = {"format": "pdf", "page_number": provenance.page_no}
             if getattr(provenance, "bbox", None) is not None:
                 loc["bbox"] = provenance.bbox.model_dump(mode="json")
+                loc["coordinate_system"] = {"BOTTOMLEFT": "pdf_bottom_left", "TOPLEFT": "pdf_top_left"}[
+                    provenance.bbox.coord_origin.value]
             locations.append(loc)
         if not locations:
             _flag(result, "docling_source_location_missing")
             continue
+        block_id = f"docling-item-{index}"
+        parent_id = f"pdf-page-{locations[0]['page_number']}"
+        data: dict[str, Any] = {"docling_label": label}
+        if label == "picture":
+            result.blocks.append(Block(
+                block_id=block_id, element_type="figure", content_text=None,
+                source_locations=locations, parent_id=parent_id, section_path=list(section),
+                quality_flags=["image_analysis_pending"], content_data=data,
+                extraction_method="docling_cpu_ocr_disabled",
+            ))
+            result.pending_images += 1
+            result.metrics["pictures"] += 1
+            try:
+                image = item.get_image(document)
+                if image is None:
+                    raise ValueError("picture unavailable")
+                output = io.BytesIO()
+                image.save(output, format="PNG")
+                result.assets.append(ExtractedAsset(
+                    block_id=block_id, content=output.getvalue(), mime_type="image/png",
+                    source_locations=locations, asset_role="region_image",
+                    rendering_details={"renderer": "docling", "region": "picture"},
+                ))
+            except Exception:
+                _flag(result, "docling_picture_image_unavailable")
+            continue
+        text = getattr(item, "text", None)
+        if label == "table":
+            text = item.export_to_markdown(doc=document)
+            data["table"] = item.data.model_dump(mode="json")
+            result.metrics["tables"] += 1
+        if not text or not text.strip():
+            if label == "table":
+                _flag(result, "docling_empty_table")
+            continue
+        if "\ufffd" in text or "\x00" in text:
+            _flag(result, "docling_garbled_text")
+        text_pages.update(location["page_number"] for location in locations)
         kind = "table" if label == "table" else "heading" if label in {"section_header", "title"} else "paragraph"
         if kind == "heading":
             section = [text]
         result.blocks.append(Block(
-            block_id=f"docling-item-{index}", element_type=kind, content_text=text,
-            source_locations=locations, section_path=list(section), content_data=data, extraction_method="docling_cpu_ocr_disabled",
+            block_id=block_id, element_type=kind, content_text=text,
+            source_locations=locations, parent_id=parent_id, section_path=list(section),
+            content_data=data, extraction_method="docling_cpu_ocr_disabled",
         ))
+    # 原画像はDoclingが図として検出しなかった場合も保存する。本文の代替には使わない。
+    from pypdf import PdfReader
+    for page_no, page in enumerate(PdfReader(path).pages, 1):
+        _pdf_original_images(page, page_no, result)
+    for block in result.blocks:
+        if block.element_type == "page" and block.source_locations[0]["page_number"] not in text_pages:
+            block.quality_flags.append("pdf_page_without_text_ocr_required")
+            _flag(result, "pdf_page_without_text_ocr_required")
     return result

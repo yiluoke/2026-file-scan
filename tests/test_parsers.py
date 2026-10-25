@@ -401,7 +401,7 @@ def test_pdf_native_reads_text_and_scan_is_pending_instead_of_success(tmp_path: 
     pdf.showPage()
     pdf.drawImage(ImageReader(io.BytesIO(PNG)), 20, 500, width=100, height=100)
     pdf.save()
-    result = parse_file(source, "pdf")
+    result = parse_file(source, "pdf", pdf_backend="native")
     assert "Maintenance manual" in "\n".join(texts(result))
     assert result.metrics["pages_total"] == 2
     assert result.metrics["pages_processed"] == 2
@@ -417,7 +417,7 @@ def test_blank_pdf_does_not_look_like_a_successful_scan(tmp_path: Path):
     writer = PdfWriter()
     writer.add_blank_page(width=100, height=100)
     writer.write(source)
-    result = parse_file(source, "pdf")
+    result = parse_file(source, "pdf", pdf_backend="native")
     assert result.processing_status == "partial"
     assert "no_extractable_text" in result.quality_flags
 
@@ -428,7 +428,7 @@ def test_pdf_vector_drawing_is_not_silently_ignored(tmp_path: Path):
     pdf.drawString(20, 750, "Diagram")
     pdf.rect(20, 500, 100, 100)
     pdf.save()
-    result = parse_file(source, "pdf")
+    result = parse_file(source, "pdf", pdf_backend="native")
     assert "pdf_vector_graphics_unprocessed" in result.quality_flags
     assert result.processing_status == "partial"
 

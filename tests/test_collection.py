@@ -38,10 +38,11 @@ def test_config_resolves_paths_relative_to_configuration_and_applies_defaults(tm
     assert settings.sources[0].root == tmp_path / "source"
     assert settings.storage_dir == tmp_path / "var/storage"
     assert settings.report_dir == tmp_path / "var/reports"
-    assert settings.database_url.endswith((tmp_path / "var/knowledge.sqlite3").as_posix())
+    assert settings.database_url == "postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan"
     assert settings.max_file_bytes == 100 * 1024 * 1024
     assert settings.copy_retries == 2
-    assert settings.pdf_backend == "native"
+    assert settings.pdf_backend == "docling"
+    assert settings.docling_artifacts_path == tmp_path / "data/models/docling"
     assert settings.knowledge_id == "default"
 
 

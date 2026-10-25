@@ -1,0 +1,50 @@
+[
+  {
+    "path": "text/rfc8259.txt",
+    "url": "https://www.rfc-editor.org/rfc/rfc8259.txt",
+    "source": "RFC Editor RFC 8259",
+    "sha256": "61a5378f4255c720beb2a4b4a63b29540147c140f36988bf086291989b4cd2d7"
+  },
+  {
+    "path": "text/rfc4180.txt",
+    "url": "https://www.rfc-editor.org/rfc/rfc4180.txt",
+    "source": "RFC Editor RFC 4180",
+    "sha256": "5d9ec035aa40c0108362cb767c9e2d08c30f7225cb2a4715f484cb13c29b5f21"
+  },
+  {
+    "path": "word/test.docx",
+    "url": "https://raw.githubusercontent.com/python-openxml/python-docx/v1.2.0/tests/test_files/test.docx",
+    "source": "python-docx official test fixture (MIT)",
+    "sha256": "fba1c76b66ff30982e5281941ca1111eaeaeb092abb6dfbe1730bed3774f40b6"
+  },
+  {
+    "path": "word/blocks.docx",
+    "url": "https://raw.githubusercontent.com/python-openxml/python-docx/v1.2.0/tests/test_files/blk-inner-content.docx",
+    "source": "python-docx official test fixture (MIT)",
+    "sha256": "16243dd05f686d6d5fab331843691492ad78ae3eb4f13cc8686077b44718c0ba"
+  },
+  {
+    "path": "excel/test1.xlsx",
+    "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/pandas/tests/io/data/excel/test1.xlsx",
+    "source": "pandas official test fixture (BSD-3-Clause)",
+    "sha256": "b6fe2d9ae5afd6d0bdfefbae9c0c1649d8bf883e183a153cb76f2a8a548cef11"
+  },
+  {
+    "path": "excel/multisheet.xlsx",
+    "url": "https://raw.githubusercontent.com/pandas-dev/pandas/main/pandas/tests/io/data/excel/test_multisheet.xlsx",
+    "source": "pandas official test fixture (BSD-3-Clause)",
+    "sha256": "2e2093238e2304bd6bce5db643db89cb6ff45774285701a43ad95c095359d496"
+  },
+  {
+    "path": "pdf/dummy.pdf",
+    "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+    "source": "W3C accessibility test PDF",
+    "sha256": "3df79d34abbca99308e79cb94461c1893582604d68329a41fd4bec1885e6adb4"
+  },
+  {
+    "path": "pdf/table.pdf",
+    "url": "https://www.w3.org/WAI/WCAG21/working-examples/pdf-table/table.pdf",
+    "source": "W3C accessibility table example",
+    "sha256": "a693998ff2a475d128c11644fbf02374249f08ac134d526a4d9b913d8b5834a5"
+  }
+]

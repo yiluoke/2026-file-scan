@@ -19,6 +19,7 @@ DEFAULT_EXTENSIONS = (
     ".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md", ".py",
     ".sql", ".json", ".yaml", ".yml", ".csv", ".log",
 )
+DEFAULT_DATABASE_URL = "postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan"
 
 
 @dataclass(frozen=True)
@@ -31,23 +32,43 @@ class Source:
 
 
 @dataclass
+class EmbeddingSettings:
+    enabled: bool = False
+    model: str = "text-embedding-3-small"
+    dimensions: int = 1536
+    api_key: str = field(default="", repr=False)
+    api_key_env: str = "OPENAI_API_KEY"
+    batch_size: int = 16
+    read_batch_size: int = 128
+    batch_max_tokens: int = 262112
+    timeout_seconds: int = 60
+
+
+@dataclass
 class Settings:
     sources: list[Source] = field(default_factory=list)
     knowledge_id: str = "default"
     system_id: str = "unspecified"
     environment: str = "unspecified"
     # repr(settings)や通常のログに接続文字列を出さない。
-    database_url: str = field(default="sqlite:///var/knowledge.sqlite3", repr=False)
+    database_url: str = field(default=DEFAULT_DATABASE_URL, repr=False)
     database_url_env: str = "FILE_SCAN_DATABASE_URL"
     storage_dir: Path = field(default_factory=lambda: Path("var/storage"))
     report_dir: Path = field(default_factory=lambda: Path("var/reports"))
     include_extensions: tuple[str, ...] = DEFAULT_EXTENSIONS
     max_file_bytes: int = 100 * 1024 * 1024
     copy_retries: int = 2
-    pdf_backend: str = "native"
+    pdf_backend: str = "docling"
+    docling_artifacts_path: Path = field(default_factory=lambda: Path("data/models/docling"))
     include_hidden: bool = False
     chunk_max_characters: int = 1800
+    chunk_max_tokens: int = 8191
+    chunk_context_max_tokens: int = 1024
     parse_timeout_seconds: int = 120
+    parse_workers: int = 1
+    parse_worker_max_tasks: int = 100
+    parse_worker_max_memory_mb: int = 1536
+    embedding: EmbeddingSettings = field(default_factory=EmbeddingSettings)
 
 
 def _string(value: Any, field_name: str) -> str:
@@ -121,6 +142,29 @@ def _database_url(value: str, base: Path) -> str:
 def validate_settings(settings: Settings) -> None:
     """直接生成されたSettingsでも、危険な収集範囲を実行前に拒否する。"""
     _integer(settings.chunk_max_characters, "chunk_max_characters", 100)
+    if _integer(settings.chunk_max_tokens, "chunk_max_tokens", 32) > 8191:
+        raise ConfigError("chunk_max_tokensは8191以下にしてください")
+    if _integer(settings.chunk_context_max_tokens, "chunk_context_max_tokens", 1) >= settings.chunk_max_tokens:
+        raise ConfigError("chunk_context_max_tokensはchunk_max_tokens未満にしてください")
+    if _integer(settings.parse_workers, "parse_workers", 1) > 4:
+        raise ConfigError("parse_workersは4以下にしてください")
+    _integer(settings.parse_worker_max_tasks, "parse_worker_max_tasks", 1)
+    _integer(settings.parse_worker_max_memory_mb, "parse_worker_max_memory_mb", 128)
+    embedding = settings.embedding
+    _boolean(embedding.enabled, "embedding.enabled")
+    maximum = {"text-embedding-3-small": 1536, "text-embedding-3-large": 3072}
+    if embedding.model not in maximum:
+        raise ConfigError("embedding.modelにはtext-embedding-3-smallまたはlargeを指定してください")
+    dimensions = _integer(embedding.dimensions, "embedding.dimensions", 1)
+    if dimensions > maximum[embedding.model]:
+        raise ConfigError("embedding.dimensionsがモデルの最大次元数を超えています")
+    if _integer(embedding.batch_size, "embedding.batch_size", 1) > 32:
+        raise ConfigError("embedding.batch_sizeは32以下にしてください")
+    _integer(embedding.timeout_seconds, "embedding.timeout_seconds", 1)
+    if _integer(embedding.read_batch_size, "embedding.read_batch_size", 1) > 1000:
+        raise ConfigError("embedding.read_batch_sizeは1000以下にしてください")
+    if _integer(embedding.batch_max_tokens, "embedding.batch_max_tokens", 8191) > 300000:
+        raise ConfigError("embedding.batch_max_tokensは300000以下にしてください")
     ids: set[str] = set()
     roots: list[Path] = []
     for source in settings.sources:
@@ -178,7 +222,16 @@ def load_config(path: str | Path) -> Settings:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", env_name):
         raise ConfigError("database_url_envの環境変数名が不正です")
     database = (os.environ.get("FILE_SCAN_DATABASE_URL") or os.environ.get(env_name)
-                or raw.get("database_url", "sqlite:///var/knowledge.sqlite3"))
+                or raw.get("database_url", DEFAULT_DATABASE_URL))
+    embedding = raw.get("embedding", {})
+    if not isinstance(embedding, dict):
+        raise ConfigError("embeddingにはマッピングを指定してください")
+    key_env = _string(embedding.get("api_key_env", "OPENAI_API_KEY"), "embedding.api_key_env")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key_env):
+        raise ConfigError("embedding.api_key_envの環境変数名が不正です")
+    api_key = os.environ.get(key_env) or embedding.get("api_key", "")
+    if not isinstance(api_key, str) or any(char in api_key for char in "\r\n\x00"):
+        raise ConfigError("embedding.api_keyの形式が不正です")
     settings = Settings(
         sources=sources,
         knowledge_id=_string(raw.get("knowledge_id", "default"), "knowledge_id"),
@@ -191,10 +244,27 @@ def load_config(path: str | Path) -> Settings:
         include_extensions=tuple(dict.fromkeys(extension.lower() for extension in extensions)),
         max_file_bytes=_integer(raw.get("max_file_bytes", 100 * 1024 * 1024), "max_file_bytes", 1),
         copy_retries=_integer(raw.get("copy_retries", 2), "copy_retries", 0),
-        pdf_backend=_string(raw.get("pdf_backend", "native"), "pdf_backend"),
+        pdf_backend=_string(raw.get("pdf_backend", "docling"), "pdf_backend"),
+        docling_artifacts_path=_path(raw.get("docling_artifacts_path", "data/models/docling"),
+                                    base, "docling_artifacts_path"),
         include_hidden=_boolean(raw.get("include_hidden", False), "include_hidden"),
         chunk_max_characters=_integer(raw.get("chunk_max_characters", 1800), "chunk_max_characters", 100),
+        chunk_max_tokens=_integer(raw.get("chunk_max_tokens", 8191), "chunk_max_tokens", 32),
+        chunk_context_max_tokens=_integer(raw.get("chunk_context_max_tokens", 1024), "chunk_context_max_tokens", 1),
         parse_timeout_seconds=_integer(raw.get("parse_timeout_seconds", 120), "parse_timeout_seconds", 1),
+        parse_workers=_integer(raw.get("parse_workers", 1), "parse_workers", 1),
+        parse_worker_max_tasks=_integer(raw.get("parse_worker_max_tasks", 100), "parse_worker_max_tasks", 1),
+        parse_worker_max_memory_mb=_integer(raw.get("parse_worker_max_memory_mb", 1536), "parse_worker_max_memory_mb", 128),
+        embedding=EmbeddingSettings(
+            enabled=_boolean(embedding.get("enabled", False), "embedding.enabled"),
+            model=_string(embedding.get("model", "text-embedding-3-small"), "embedding.model"),
+            dimensions=_integer(embedding.get("dimensions", 1536), "embedding.dimensions", 1),
+            api_key=api_key, api_key_env=key_env,
+            batch_size=_integer(embedding.get("batch_size", 16), "embedding.batch_size", 1),
+            read_batch_size=_integer(embedding.get("read_batch_size", 128), "embedding.read_batch_size", 1),
+            batch_max_tokens=_integer(embedding.get("batch_max_tokens", 262112), "embedding.batch_max_tokens", 8191),
+            timeout_seconds=_integer(embedding.get("timeout_seconds", 60), "embedding.timeout_seconds", 1),
+        ),
     )
     if settings.pdf_backend not in ("native", "docling"):
         raise ConfigError("pdf_backendはnativeまたはdoclingを指定してください")

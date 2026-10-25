@@ -4,6 +4,7 @@
 | --- | --- |
 | プロジェクト | 2026-file-scan |
 | 作成日 | 2026-10-12 |
+| 最終更新日 | 2026-10-25 |
 | 設計レベル | 論理設計・カラム／制約／索引の詳細設計案 |
 | 状態 | 全体のテーブル設計案。登録に必要な部分を第1版CLIへ実装。実装範囲は下記参照 |
 | 対象DB | 業務検索用PostgreSQL。pgvector・PGroongaの導入を前提とした案 |
@@ -13,9 +14,9 @@
 
 本資料を、業務検索用DBのテーブル、カラム、キー、制約、索引の正本とする。変換データの意味と識別子の生成規則は文書変換設計、検索APIの契約は検索基盤設計を参照する。
 
-2026-10-18の第1版では、`knowledge_bases`、`documents`、`knowledge_documents`、`artifact_assets`、`document_versions`、`conversion_profiles`、`extraction_generations`、`blocks`、`chunks`、`chunk_blocks`、`asset_occurrences`、`artifact_relations`、`index_jobs`を実装した。実DDLの定義と非破壊のv1移行は`src/file_scan/db.py`、操作手順は[第1版の実装・操作説明](../implementation/first-version.md)を参照する。
+2026-10-18の第1版では、`knowledge_bases`、`documents`、`knowledge_documents`、`artifact_assets`、`document_versions`、`conversion_profiles`、`extraction_generations`、`blocks`、`chunks`、`chunk_blocks`、`asset_occurrences`、`artifact_relations`、`index_jobs`を実装した。実DDLの定義と非破壊のv1/v2→v3移行は`src/file_scan/db.py`、操作手順は[第1版の実装・操作説明](../implementation/first-version.md)を参照する。
 
-実装用補助表として、適用版を管理する`schema_migrations`と、1DBの実体保管先を固定する`ingestion_settings`を追加する。後者は`singleton_id=1`のPK・CHECK、`storage_root text NOT NULL`、共通時刻列を持ち、初回登録時に保管先を設定する。業務リリース、Embedding、ACL、検索監視の表・拡張索引は後続である。未導入のリリース・Embedding参照列はNULLのみとし、公開状態は`draft`、検索範囲は無効、ACLは未同期に制約する。`run_id`等のUUIDは第1版ではUUID文字列をtext列へ格納する。将来の検索公開機能では、移行を追加してこれらの制約を変更する。
+実装用補助表として、適用版を管理する`schema_migrations`と、1DBの実体保管先を固定する`ingestion_settings`を追加する。後者は`singleton_id=1`のPK・CHECK、`storage_root text NOT NULL`、共通時刻列を持ち、初回登録時に保管先を設定する。2026-10-25までに`embedding_profiles`・`chunk_embeddings`も実装し、スキーマv3で`selected_generations`・`extraction_cache`・`embedding_cache`を追加した。入力ハッシュ検索用索引も追加する。業務リリース、ACL、検索監視の表・拡張索引は後続である。検索公開のリリース・Embedding参照列は引き続きNULLのみとし、公開状態は`draft`、検索範囲は無効、ACLは未同期に制約する。`run_id`等のUUIDは第1版ではUUID文字列をtext列へ格納する。将来の検索公開機能では、移行を追加してこれらの制約を変更する。
 
 - Dify内部DBのテーブルを本システムから直接更新しない。会話履歴の独自DB設計は本資料に含めない。
 - 原本・画像のバイト列はストレージに置き、DBは参照・構造・検索本文・ベクトルを管理する。
@@ -24,6 +25,8 @@
 - 検索採用世代は原本と業務リリースの対応表で選ぶ。世代単体のグローバルな`active`フラグには依存しない。
 - 由来、原本位置、公開状態、権限を、本文・関連情報・画像・履歴で維持する。
 - 初期PoCは1システム・限定版・全員同一閲覧範囲とする。利用者別ACLの実連携は別途検証する。
+
+現在の取り込み用の確定仕様は[取り込み改善設計](05-ingestion-improvements.md)を参照。以下の業務公開用の将来テーブル案と、v3で追加する補助表の物理定義を区別する。`embedding_profiles`の実装列名は`model`（将来案の`model_name`に相当）、入力版は`input_version`。`chunk_embeddings`は実測`input_tokens`も持つ。
 
 ## 2. 共通規則
 
@@ -80,13 +83,19 @@
 | 19 | `index_jobs` | 収集・変換・索引の実行試行 |
 | 20 | `retrieval_events` | 検索要求・採用版・状態の監視記録 |
 
-20表は既存要件を分解した設計案であり、20個のサービスを作る意味ではない。画像処理や利用者別ACLなどの導入段階に合わせて、実装順を決める。
+v3補助表：`selected_generations`（ナレッジ・文書ごとの選択世代）、`extraction_cache`（分割前の抽出結果）、`embedding_cache`（プロファイル・入力単位のベクトル）。適用管理は`schema_migrations`、保管先固定は`ingestion_settings`。
+
+上記20表は既存要件を分解した設計案であり、20個のサービスを作る意味ではない。画像処理や利用者別ACLなどの導入段階に合わせて、実装順を決める。
 
 ## 4. 主な関係
 
 ```mermaid
 erDiagram
     knowledge_bases ||--o{ knowledge_documents : includes
+    knowledge_documents ||--o| selected_generations : selects
+    extraction_generations ||--o{ selected_generations : selected
+    artifact_assets ||--o{ extraction_cache : extraction_input
+    embedding_profiles ||--o{ embedding_cache : caches
     documents ||--o{ knowledge_documents : belongs
     documents ||--o{ document_versions : has
     artifact_assets ||--o{ document_versions : stores
@@ -441,6 +450,39 @@ UQ：`(job_key, attempt_no)`。`queued / running`の行に対する`job_key`の�
 
 質問・根拠本文・画像・APIキーを初期設定で保存しない。`snapshot_id`はその検索の整合した読み取りを識別するIDであり、後日同じDB状態を再現できる永続スナップショットではない。結果数と不足情報は認可範囲内だけを記録する。監視不能時の回答継続方針と保存期間は未決事項とする。
 
+### 5.21 `selected_generations`：v3の下書き選択
+
+| カラム | 型 | NULL | 内容・キー |
+| --- | --- | --- | --- |
+| `knowledge_id` / `document_id` | text | 必須 | 複合PK、FK → `knowledge_documents` |
+| `generation_id` | text | 任意 | `document_id`との複合FK → `extraction_generations` |
+| `conversion_revision` | text | 必須 | FK → `conversion_profiles`。取り込みで要求した設定 |
+
+共通時刻列に加え`updated_at`を持つ。取り込み開始時に選択をNULLへ戻し、原本収集後に指定設定の世代へ更新する。失敗世代も記録する。世代と設定・最新原本版の一致は利用クエリで再検査し、作成日時による代替選択はしない。v3移行時に履歴から値を推測しない。将来のリリース別公開選択とは別の補助表である。
+
+### 5.22 `extraction_cache`：v3の抽出キャッシュ
+
+| カラム | 型 | NULL | 内容・キー |
+| --- | --- | --- | --- |
+| `cache_key` | text | 必須 | PK。原本ハッシュ＋抽出プロファイルのハッシュ |
+| `source_version` | text | 必須 | FK → `artifact_assets.asset_id`。入力原本の実体 |
+| `extraction_revision` | text | 必須 | 形式別の抽出設定・実装・依存・モデルのハッシュ |
+| `payload` | jsonb | 必須 | ブロック・関係・品質・画像実体参照。画像バイト列は含めない |
+| `payload_hash` | text | 必須 | ペイロード整合性のSHA-256 |
+
+分割条件をキーへ入れず、分割変更時に再利用する。文書への登録と同じトランザクションで更新する。画像参照はJSONから取り出し、ストレージ規則・サイズ・ハッシュを検証する。現行は履歴・キャッシュを自動削除しない。将来GCを導入する場合はこの画像参照も保持対象に含める。
+
+### 5.23 `embedding_cache`：v3の入力単位ベクトル
+
+| カラム | 型 | NULL | 内容・キー |
+| --- | --- | --- | --- |
+| `embedding_profile_id` / `input_hash` | text | 必須 | 複合PK。プロファイルと実入力の組 |
+| `dimensions` | integer | 必須 | プロファイルとの複合FKに使用 |
+| `embedding` | vector | 必須 | 完成したベクトル |
+| `input_tokens` | integer | 必須 | 正の実測トークン数 |
+
+FK：`(embedding_profile_id, dimensions)` → `embedding_profiles`。PostgreSQLでは`vector_dims(embedding)=dimensions`をCHECKする。同じ入力を世代間で再利用し、チャンクへ適用した結果は`chunk_embeddings`にも保持する。既存のv2行は必要なハッシュだけ検索して再利用できる。`chunk_embeddings(embedding_profile_id, input_hash)`に逆引き索引を追加する。公開許可やACLの共通化には用いない。
+
 ## 6. 索引設計案
 
 | 対象 | 索引候補 | 目的・条件 |
@@ -540,8 +582,8 @@ PoCは検索結果キャッシュを必須にしない。将来導入する場�
 
 ## 10. 未決事項
 
-- PostgreSQL・拡張の採用版、実行環境、DBスキーマ名、DDL・マイグレーション方式。
-- ベクトルモデル・次元・距離、索引方式、サイズ・性能・可用性の目標。
+- 本番のPostgreSQL・拡張採用版、実行環境、DBスキーマ名。ローカルはPostgreSQL 18.6・pgvector 0.8.6、登録用の非破壊マイグレーションはv3まで実装済み。
+- 検索用の距離・索引方式、サイズ・性能・可用性の目標。生成はOpenAI text-embedding-3-small・1536次元を既定とし設定可能。
 - 原本IDと収集元安定IDの対応、ファイル移動時の台帳更新、リリース対応の承認担当。
 - 単一リリース内の時点履歴、跨る業務版・システムの資料、主環境以外の扱い。
 - グループ・原本ACLの同期方式、API認証の管理、権限変更反映の時間条件。

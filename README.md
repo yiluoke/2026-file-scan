@@ -4,6 +4,8 @@
 
 第1版は、ファイルサーバー等の指定フォルダを収集し、文書構造・原本位置・チャンクをDBへ**下書き登録するCLI**を提供する。検索・AI回答を接続する前に、何を取り込めたかと抽出不足を確認するための実装である。
 
+2026-10-25更新：取り込みの8改善を適用。変更仕様と既存DBの移行方法は[取り込み改善設計（v3）](docs/design/05-ingestion-improvements.md)を参照。
+
 ## 最初に動かす
 
 Python 3.12以上を使用する。以下はmacOS／Linuxのシェル例。
@@ -15,11 +17,15 @@ python -m pip install -e '.[dev]'
 cp config.example.yaml config.local.yaml
 ```
 
-同梱の架空サンプル`examples/input/`で試す場合は、設定の編集は不要。社内資料を試す場合は、`config.local.yaml`の`sources[].root`を取り込みたいフォルダへ変更する。相対パスは設定ファイルの所在を基準に解決する。収集対象と出力先の`storage_dir`・`report_dir`は別の場所にする。
+標準の収集元はプロジェクト内の仮想ファイルサーバー`data/file-server/department/`。`python scripts/download_samples.py`で公開TXT・Word・Excel・PDFを各2件配置してから試す。社内資料を試す場合は、`config.local.yaml`の`sources[].root`を取り込みたいフォルダへ変更する。相対パスは設定ファイルの所在を基準に解決する。収集対象と出力先の`storage_dir`・`report_dir`は別の場所にする。
 
-標準例はローカルSQLiteの`data/file_scan.sqlite3`を使用し、原本・画像は`artifacts/storage`、レポートは`artifacts/reports`へ保存する。DBサーバーなしで試せる。設定後は次の順序で実行する。
+ローカル検証も **PostgreSQL 18＋pgvector** を使用する。先に[ローカルDBの導入・起動手順](docs/implementation/local-postgresql.md)でDBと`.env`を準備する。原本・画像は`artifacts/storage`、レポートは`artifacts/reports`へ保存する。DB起動後、接続情報を読み込んで次の順序で実行する。
 
 ```sh
+set -a
+source .env
+set +a
+python scripts/download_docling_models.py --config config.local.yaml
 file-scan scan --config config.local.yaml
 file-scan init-db --config config.local.yaml
 file-scan ingest --config config.local.yaml
@@ -29,9 +35,10 @@ file-scan status --config config.local.yaml
 | コマンド | 処理 |
 | --- | --- |
 | `scan` | 対象・除外・列挙エラーの棚卸し。レポートを書き出し、原本コピーやDB登録は行わない |
-| `init-db` | スキーマv1を初期化。適用済みなら再利用し、既存表を削除しない |
+| `init-db` | スキーマv3を初期化。v1/v2へ管理表・キャッシュを追加し、既存データを保持 |
 | `ingest` | 原本コピー、抽出、分割、DBへの下書き登録、確認ファイルの出力 |
-| `status` | 指定ナレッジの文書数、処理状態別の世代数等を表示 |
+| `embed` | 設定で有効な場合、OpenAI APIでチャンクのEmbeddingを生成してpgvectorへ保存 |
+| `status` | 現在の選択世代・Embedding準備状況と、過去世代の集計を分けて表示 |
 
 終了コードは`0`が正常、`1`が設定・DB等の実行全体のエラー、`2`が部分抽出や個別ファイルの失敗等を含む完了。画像の解析待ちも部分抽出として扱う。
 
@@ -46,15 +53,15 @@ Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。
 | Python | 実行せずASTで関数・クラス等を抽出 |
 | XLSX・XLSM | openpyxlとOOXMLで複数シート、結合、数式と保存済み結果、画像を抽出 |
 | DOCX | OOXMLを直接読み、段落・表の順序、見出し、目次参照、画像を抽出 |
-| PDF | 標準はpypdfの軽量文字抽出。画像を保存し、文字なしページ等を未処理として記録 |
+| PDF | 標準はDoclingの実モデルによる本文・表・レイアウト抽出。原本座標と画像を保持し、文字なしページはOCR待ちとして記録 |
 
-PDFの段組み・表・正確な領域座標の完全復元、Wordの表示レイアウトの再現は未対応。画像は実体と原本位置を保持し、OCR・画像説明待ちの`pending_images`として記録する。旧形式のDOC・XLS・PPTとPPTXは第1版の対象外。
+DoclingによるPDFの段組み・表・領域座標は抽出するが、全原本の完全復元は保証しない。Wordの表示レイアウトの再現は未対応。画像は実体と原本位置を保持し、OCR・画像説明待ちの`pending_images`として記録する。旧形式のDOC・XLS・PPTとPPTXは第1版の対象外。
 
 同梱設定の収集拡張子はTXT・MD・PY・XLSX・XLSM・DOCX・PDFに限定している。SQLやログ等も収集する場合は、`include_extensions`へ対象拡張子を追加する。
 
-DB登録は`draft`のみ。**画像API、Embedding、検索索引・検索API、Dify、利用者別ACL、検索公開、レビュー承認画面は未実装**。取り込み処理から文書・画像を外部LLM／OCR／画像APIへ送信しない。
+DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`はローカル抽出までを行い、`embed`が有効な場合に抽出テキストを外部APIへ送信する。画像API、検索API、Dify、利用者別ACL、検索公開、レビュー承認画面は未実装。
 
-チャンク本文の既定上限`1800`は暫定の**文字数**であり、トークン数ではない。`token_count`はNULLのまま保存する。設計案のPoC用トークン目安とは別の設定である。
+チャンク本文は既定1800文字以内、見出し・列見出しを含む検索入力は既定8191トークン以内に分割する。`cl100k_base`の実測値を`chunks.token_count`と`chunk_embeddings.input_tokens`へ保存する。表は行を優先し、後続チャンクの検索文脈にも列見出しを引き継ぐ。
 
 ## 保存先と再実行
 
@@ -62,7 +69,7 @@ DB登録は`draft`のみ。**画像API、Embedding、検索索引・検索API、
 - `storage_dir`：原本コピーと画像を内容ハッシュで保管する。**1個のDBに対して初回登録時の`storage_dir`を固定**し、設定変更だけによる切り替えは拒否する。DBと保管先を一緒にバックアップする。
 - `report_dir`：`scan-*.json`／`ingest-*.json`と、`generations/<世代ハッシュ>/`以下の確認用JSON・JSONL・Markdownを保存する。
 
-同じ原本と同じ変換設定は既存の変換世代を再利用する。部分抽出を同じ条件でやり直す場合は、次を実行する。
+同じ原本と同じ変換設定は既存の変換世代を選択して再利用する。分割設定だけを変えた場合は抽出キャッシュを使い、同じEmbedding入力には保存済みベクトルを利用する。変更のない原本は完全ハッシュ照合を保ち、一時コピーを省略する。部分抽出を同じ条件でやり直す場合は、次を実行する。
 
 ```sh
 file-scan ingest --config config.local.yaml --retry-partial
@@ -70,21 +77,26 @@ file-scan ingest --config config.local.yaml --retry-partial
 
 画像APIが未実装のため、再実行だけで画像の解析待ちが解消されるわけではない。詳細は[第1版の操作・実装説明](docs/implementation/first-version.md)を参照。
 
-## PostgreSQLと任意のDocling
+## OpenAI Embeddingとファイルサーバー
 
-PostgreSQLでは[設定例](config.postgresql.example.yaml)と[ローカル検証用Compose](compose.yaml)を使う。DB接続先は`FILE_SCAN_DATABASE_URL`環境変数でYAMLより優先して指定できる。認証情報をGitへ登録しない。`.env.example`は設定例であり、Python CLIは`.env`を自動で読み込まない。
+[設定・公開サンプル・検証手順](docs/implementation/openai-embedding.md)を参照。実キーを`.env`の`OPENAI_API_KEY`または`config.local.yaml`の`embedding.api_key`へ設定し、`embedding.enabled: true`へ変更して`file-scan embed --config config.local.yaml`を実行する。既定モデルは`text-embedding-3-small`、1536次元。仮キーではAPIを呼ばず設定エラーにする。
 
-DoclingのPDF構造抽出を試す場合は追加依存を導入し、設定を切り替える。
+## PostgreSQL＋pgvectorとDocling
+
+標準設定はPostgreSQLを使用する。[ローカルDBの手順](docs/implementation/local-postgresql.md)にmacOS用Postgres.appと[Compose](compose.yaml)の導入・起動・停止方法を記載する。Composeもpgvectorを含み、開発用とテスト用のDBで拡張を有効化する。DB接続先は`FILE_SCAN_DATABASE_URL`環境変数でYAMLより優先して指定できる。認証情報をGitへ登録しない。`.env.example`は設定例であり、Python CLIは`.env`を自動で読み込まない。
+
+PDFは**Doclingの実モデルによるレイアウト・表構造抽出**を標準とする。Doclingは通常の依存に含む。初回に次を実行してモデルを事前取得する。
 
 ```sh
-python -m pip install -e '.[docling]'
+python scripts/download_docling_models.py --config config.local.yaml
 ```
 
 ```yaml
 pdf_backend: docling
+docling_artifacts_path: data/models/docling
 ```
 
-Docling経路はCPU固定・OCR無効で、外部画像説明サービスを使わない。実モデルを使う変換は未検証。初回はモデル取得や事前配置が必要になる場合があり、依存不足・変換失敗を標準経路の成功で置き換えない。
+CPU固定・OCR無効・外部サービス無効で処理する。公開PDF2件を実モデルで検証し、本文・表・bboxを確認する。画像の意味解析とOCRは後続処理。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
 
 ## コードを読む順序
 
@@ -102,7 +114,7 @@ Docling経路はCPU固定・OCR無効で、外部画像説明サービスを使�
 | 8 | [db.py](src/file_scan/db.py) | DB定義、制約、初期化 |
 | 9 | [pipeline.py](src/file_scan/pipeline.py) | 一連の処理、再実行、文書単位の登録 |
 
-検証コマンドは`python -m pytest`と`python -m ruff check src tests`。
+検証は`.env`を読み込み、`python scripts/test_postgres.py`と`python -m ruff check src tests scripts`を実行する。実PostgreSQLとpgvectorの検証を含む。`python -m pytest`単独では、テスト用接続先が未設定の場合に実DBテストをスキップする。
 
 ## 設計資料
 

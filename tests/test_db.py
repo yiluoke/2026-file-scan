@@ -145,6 +145,22 @@ def test_migrate_refuses_unknown_future_version(engine):
         assert connection.execute(select(tables["schema_migrations"].c.version)).scalar_one() == SCHEMA_VERSION + 1
 
 
+def test_v1_upgrade_adds_embeddings_without_losing_documents(engine):
+    with engine.begin() as connection:
+        _seed(connection)
+        for name in ("selected_generations", "extraction_cache", "embedding_cache"):
+            tables[name].drop(connection)
+        tables["chunk_embeddings"].drop(connection)
+        tables["embedding_profiles"].drop(connection)
+        connection.execute(tables["schema_migrations"].update().values(version=1))
+    migrate(engine)
+    migrate(engine)
+    with engine.connect() as connection:
+        assert connection.execute(select(tables["schema_migrations"].c.version)).scalar_one() == SCHEMA_VERSION
+        assert set(connection.execute(select(tables["documents"].c.document_id)).scalars()) == {"d1", "d2"}
+        assert "chunk_embeddings" in inspect(connection).get_table_names()
+
+
 def test_ingestion_settings_has_one_storage_root_and_timestamps(engine):
     settings = tables["ingestion_settings"]
     with engine.begin() as connection:
@@ -195,7 +211,7 @@ def test_metadata_compiles_for_postgresql_without_missing_foreign_tables():
     assert "TEXT[]" in ddl
     assert "ALTER TABLE documents ADD CONSTRAINT fk_documents_latest_version" in ddl
     assert "WHERE status IN ('queued', 'running')" in ddl
-    assert "embedding_profiles" not in {fk.column.table.name for table in tables.values() for fk in table.foreign_keys}
+    assert "embedding_profiles" in {fk.column.table.name for table in tables.values() for fk in table.foreign_keys}
 
 
 def test_defaults_and_document_version_cycle(connection):

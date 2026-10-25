@@ -1,4 +1,4 @@
-# 開発用PostgreSQL向け。パス・収集元ID・ナレッジIDを実環境に合わせてください。
+# 開発用PostgreSQL＋pgvector向け。標準例も同じDB構成です。
 knowledge_id: demo
 system_id: demo-system
 environment: sample
@@ -7,15 +7,33 @@ database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan
 storage_dir: artifacts/storage
 report_dir: artifacts/reports
 sources:
-  - source_id: demo-documents
-    root: examples/input
+  - source_id: local-file-server
+    root: data/file-server/department
     recursive: true
     exclude_directories: [旧版/]
     exclude_filenames: ['~$*', '*.tmp', '*_作業中.*']
 include_extensions: ['.txt', '.md', '.py', '.xlsx', '.xlsm', '.docx', '.pdf']
-pdf_backend: native
+pdf_backend: docling
+docling_artifacts_path: data/models/docling
 include_hidden: false
 chunk_max_characters: 1800
+chunk_max_tokens: 8191
+chunk_context_max_tokens: 1024
 max_file_bytes: 104857600
 copy_retries: 2
 parse_timeout_seconds: 120
+parse_workers: 1  # 解析プロセスの上限。文書単位で順に確定し、プロセスを再利用
+parse_worker_max_tasks: 100
+parse_worker_max_memory_mb: 1536  # 文書処理後のピークRSSで交換
+
+# 有効化するとembedコマンドが抽出済みsearch_textをOpenAI APIへ送信します。
+embedding:
+  enabled: false  # 実キー設定後にtrueへ変更
+  model: text-embedding-3-small
+  dimensions: 1536
+  api_key_env: OPENAI_API_KEY  # 同名の環境変数をapi_keyより優先
+  api_key: sk-placeholder-replace-me  # 実キーはGit対象外のconfig.local.yamlか.envへ
+  batch_size: 16
+  read_batch_size: 128  # DBから読むチャンク数の上限
+  batch_max_tokens: 262112  # 1要求の合計。最大300000
+  timeout_seconds: 60

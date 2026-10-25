@@ -10,11 +10,8 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.metadata
 import json
-import multiprocessing
 import os
-import sys
 import tempfile
 from collections import Counter
 from contextlib import contextmanager
@@ -26,13 +23,15 @@ from uuid import uuid4
 from sqlalchemy import and_, func, inspect, select, text
 from sqlalchemy.engine import Connection, Engine
 
-from file_scan import __version__
+from file_scan.cache import load_extraction, save_extraction
 from file_scan.chunking import build_chunks
 from file_scan.collector import ScanItem, ScanResult, collect
 from file_scan.config import Settings, validate_settings
 from file_scan.db import SCHEMA_VERSION, tables
 from file_scan.domain import Chunk, ExtractionResult
 from file_scan.storage import Storage, StoredAsset
+from file_scan.profiles import conversion_profile
+from file_scan.workers import ACTIVE_POOL, ParsePool
 
 
 class PipelineError(RuntimeError):
@@ -47,29 +46,6 @@ def digest(value: object) -> str:
     """辞書の順序に左右されないID。秘密情報入りのSettings全体は渡さない。"""
     payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
-def conversion_profile(settings: Settings) -> tuple[str, dict]:
-    """変換結果に影響する条件だけを取り出す。保存先・DB認証は含めない。"""
-    dependencies = {}
-    for name in ("python-docx", "openpyxl", "pypdf", "charset-normalizer", "Pillow", "lxml",
-                 "docling", "docling-core", "docling-parse"):
-        try:
-            dependencies[name] = importlib.metadata.version(name)
-        except importlib.metadata.PackageNotFoundError:
-            dependencies[name] = None
-    code = {}
-    for name in ("domain.py", "parsers.py", "chunking.py"):
-        code[name] = hashlib.sha256(Path(__file__).with_name(name).read_bytes()).hexdigest()
-    profile = {
-        "schema_version": "file-scan-v1", "application_version": __version__,
-        "python": ".".join(map(str, sys.version_info[:3])),
-        "dependencies": dependencies, "implementation": code,
-        "pdf_backend": settings.pdf_backend, "include_hidden": settings.include_hidden,
-        "chunk_max_characters": settings.chunk_max_characters,
-        "chunk_limit_unit": "unicode_codepoints", "image_processing": "deferred",
-    }
-    return digest(profile), profile
 
 
 def _insert_missing(conn: Connection, table, identity: dict, values: dict) -> None:
@@ -200,6 +176,10 @@ def _register_discovery(conn: Connection, settings: Settings, scan: ScanResult,
             *(memberships.c[key] == value for key, value in identity.items())
         )).values(included=True, collection_status="pending", last_seen_scan_id=scan_id,
                   last_error_code=None))
+        selections = tables["selected_generations"]
+        conn.execute(selections.update().where(
+            selections.c.knowledge_id == settings.knowledge_id,
+            selections.c.document_id == item.document_id).values(generation_id=None))
 
 
 def _reconcile_missing(conn: Connection, settings: Settings, scan: ScanResult) -> int:
@@ -246,46 +226,13 @@ def _put_asset(conn: Connection, asset: StoredAsset) -> None:
     })
 
 
-def _parse_worker(sender, path: str, file_format: str, backend: str, hidden: bool) -> None:
-    """子プロセスはDB接続を持たず、原本の作業コピーだけを解析する。"""
-    try:
-        from file_scan.parsers import parse_file
-        sender.send((True, parse_file(Path(path), file_format,
-                                     pdf_backend=backend, include_hidden=hidden)))
-    except Exception as exc:
-        # パーサー例外の本文には原文が混ざり得るため、型と安全な区分のみ返す。
-        sender.send((False, getattr(exc, "code", type(exc).__name__)))
-    finally:
-        sender.close()
-
-
 def extract(asset: StoredAsset, item: ScanItem, settings: Settings) -> ExtractionResult:
-    """解析の時間上限を文書ごとに適用し、停止した子プロセスを確実に回収する。"""
-    context = multiprocessing.get_context("spawn")
-    receiver, sender = context.Pipe(duplex=False)
-    process = context.Process(target=_parse_worker, args=(
-        sender, str(asset.path), item.format, settings.pdf_backend, settings.include_hidden))
-    process.start()
-    sender.close()
-    try:
-        if not receiver.poll(settings.parse_timeout_seconds):
-            raise TimeoutError("parse_timeout")
-        try:
-            success, result = receiver.recv()
-        except EOFError:
-            raise PipelineError("parser_process_failed") from None
-        if not success:
-            raise PipelineError(str(result))
-        return result
-    finally:
-        receiver.close()
-        process.join(timeout=1)
-        if process.is_alive():
-            process.terminate()
-            process.join(timeout=2)
-        if process.is_alive():
-            process.kill()
-            process.join()
+    """解析ワーカーを再利用する。直接呼び出す場合も終了時に確実に回収する。"""
+    pool = ACTIVE_POOL.get()
+    if pool is not None:
+        return pool.extract(asset, item)
+    with ParsePool(settings) as pool:
+        return pool.extract(asset, item)
 
 
 def _validate(result: ExtractionResult, chunks: list[Chunk]) -> list:
@@ -462,10 +409,10 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
     report = {"run_id": str(uuid4()), "started_at": utcnow().isoformat(),
               "knowledge_id": settings.knowledge_id, "status": "succeeded", "files": []}
     storage = Storage(settings.storage_dir)
-    revision, profile = conversion_profile(settings)
+    profiles = {}
     kb, docs, members = tables["knowledge_bases"], tables["documents"], tables["knowledge_documents"]
     generations = tables["extraction_generations"]
-    with ingestion_lock(engine):
+    with ingestion_lock(engine), ParsePool(settings) as pool:
         with engine.begin() as conn:
             binding = tables["ingestion_settings"]
             _insert_missing(conn, binding, {"singleton_id": 1}, {
@@ -486,9 +433,6 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                          .values(scan_status="running"))
             scan_id = _start_job(conn, settings.knowledge_id, "scan",
                                  digest([settings.knowledge_id, "scan"]))
-            _insert_missing(conn, tables["conversion_profiles"], {"conversion_revision": revision}, {
-                "schema_version": "file-scan-v1", "configuration": profile,
-            })
         scan = collect(settings)
         report["scan_errors"], report["exclusions"] = scan.errors, scan.exclusions
         with engine.begin() as conn:
@@ -515,9 +459,17 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                 with engine.begin() as conn:
                     job_id = _start_job(conn, settings.knowledge_id, "collect",
                                         digest([item.document_id, "collect"]), item.document_id)
-                original = storage.snapshot(item, settings.max_file_bytes, settings.copy_retries)
-                generation_id = digest([item.document_id, original.asset_id, revision])
-                entry.update(source_version=original.asset_id, generation_id=generation_id)
+                with engine.connect() as conn:
+                    assets = tables["artifact_assets"]
+                    versions = tables["document_versions"]
+                    known = conn.execute(select(assets).join(versions, versions.c.asset_id == assets.c.asset_id)
+                        .join(docs, and_(docs.c.document_id == versions.c.document_id,
+                                        docs.c.latest_source_version == versions.c.source_version))
+                        .where(docs.c.document_id == item.document_id)).mappings().first()
+                original = storage.snapshot(item, settings.max_file_bytes, settings.copy_retries, known)
+                entry.update(source_version=original.asset_id, source_bytes_read=original.source_bytes_read,
+                             temporary_bytes_written=original.temporary_bytes_written,
+                             original_reused=original.reused)
                 with engine.begin() as conn:
                     _put_asset(conn, original)
                     _insert_missing(conn, tables["document_versions"], {
@@ -534,9 +486,28 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                     ).values(collection_status="available", last_error_code=None))
                     _finish_job(conn, job_id, "succeeded")
                     job_id = None
+                stage = "convert"
+                if item.format not in profiles:
+                    profiles[item.format] = conversion_profile(settings, item.format)
+                revision, profile = profiles[item.format]
+                generation_id = digest([item.document_id, original.asset_id, revision])
+                cache_key = digest([original.asset_id, profile["extraction_revision"]])
+                entry.update(generation_id=generation_id, conversion_revision=revision)
+                with engine.begin() as conn:
+                    _insert_missing(conn, tables["conversion_profiles"], {"conversion_revision": revision}, {
+                        "schema_version": "file-scan-v3", "configuration": profile})
                     existing = conn.execute(select(generations).where(
                         generations.c.generation_id == generation_id)).mappings().first()
-                stage = "convert"
+                    _insert_missing(conn, generations, {"generation_id": generation_id}, {
+                        "document_id": item.document_id, "source_version": original.asset_id,
+                        "conversion_revision": revision, "processing_status": "staging"})
+                    selection = tables["selected_generations"]
+                    identity = {"knowledge_id": settings.knowledge_id, "document_id": item.document_id}
+                    _insert_missing(conn, selection, identity, {
+                        "generation_id": generation_id, "conversion_revision": revision})
+                    conn.execute(selection.update().where(selection.c.knowledge_id == settings.knowledge_id,
+                        selection.c.document_id == item.document_id).values(
+                            generation_id=generation_id, conversion_revision=revision))
                 if existing and (existing["processing_status"] == "succeeded" or (
                     existing["processing_status"] == "partial" and not retry_partial
                 )):
@@ -557,11 +528,16 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                     job_id = _start_job(conn, settings.knowledge_id, "convert",
                                         digest([generation_id, "convert"]), item.document_id,
                                         generation_id, settings.parse_timeout_seconds + 300)
-                result = extract(original, item, settings)
-                chunks = build_chunks(result.blocks, item.relative_path, settings.chunk_max_characters)
+                result = None if retry_partial else load_extraction(engine, storage, cache_key)
+                entry["extraction_cached"] = result is not None
+                if result is None:
+                    result = extract(original, item, settings)
+                chunks = build_chunks(result.blocks, item.relative_path, settings.chunk_max_characters,
+                                      settings.chunk_max_tokens, settings.chunk_context_max_tokens)
                 stored = [storage.put_bytes(asset.content, asset.mime_type) for asset in result.assets]
                 with engine.begin() as conn:
                     summary = _save_payload(conn, generation_id, result, chunks, stored)
+                    save_extraction(conn, cache_key, original.asset_id, profile["extraction_revision"], result, stored)
                     _finish_job(conn, job_id, result.processing_status)
                     conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id)
                                  .values(catalog_revision=kb.c.catalog_revision + 1))
@@ -590,9 +566,14 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                         conn.execute(generations.update().where(
                             generations.c.generation_id == generation_id
                         ).values(processing_status="failed", quality_summary={"error_code": code}))
+                    if stage == "convert":
+                        conn.execute(members.update().where(
+                            members.c.knowledge_id == settings.knowledge_id,
+                            members.c.document_id == item.document_id).values(last_error_code=code))
                     if job_id:
                         _finish_job(conn, job_id, "failed", code)
             report["files"].append(entry)
+        report["parser_workers"] = pool.metrics
         report["summary"] = {
             "discovered": len(scan.items), "excluded": len(scan.exclusions), "deleted": deleted,
             "registered": sum(e["status"] == "registered" for e in report["files"]),

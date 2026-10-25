@@ -14,7 +14,7 @@ def test_long_japanese_text_keeps_exact_character_provenance():
         assert len(chunk.content_text) <= 100
         mapping = chunk.blocks[0]
         assert chunk.content_text == original[mapping.block_char_start:mapping.block_char_end]
-        assert chunk.token_count is None
+        assert 0 < chunk.token_count <= 8191
 
 
 def test_sections_and_origins_are_not_mixed():

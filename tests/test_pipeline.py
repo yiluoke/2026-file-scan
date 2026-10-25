@@ -40,7 +40,7 @@ def database(request, tmp_path):
     @event.listens_for(engine, "connect")
     def set_search_path(dbapi, _):
         with dbapi.cursor() as cursor:
-            cursor.execute(f'SET search_path TO "{schema}"')
+            cursor.execute(f'SET search_path TO "{schema}", public')
         dbapi.commit()
 
     try:
@@ -239,7 +239,8 @@ def test_native_office_pdf_and_python_register_together(database, settings):
     pdf.drawString(72, 720, "Save after confirmation")
     pdf.save()
     (root / "script.py").write_text("def register(name):\n    return name.strip()\n", encoding="utf-8")
-    extended = replace(settings, include_extensions=(".md", ".docx", ".xlsx", ".pdf", ".py"))
+    extended = replace(settings, pdf_backend="native",
+                       include_extensions=(".md", ".docx", ".xlsx", ".pdf", ".py"))
     result = pipeline.ingest(extended, database)
     assert result["summary"]["registered"] == 5
     assert result["summary"]["failed"] == 0

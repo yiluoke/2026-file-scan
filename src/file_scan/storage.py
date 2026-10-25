@@ -9,7 +9,7 @@ import os
 import re
 import stat
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import BinaryIO
@@ -49,6 +49,9 @@ class StoredAsset:
     byte_size: int
     path: Path
     source_modified_at: datetime | None = None
+    source_bytes_read: int = 0
+    temporary_bytes_written: int = 0
+    reused: bool = False
 
 
 def _signature(info: os.stat_result) -> tuple:
@@ -102,7 +105,7 @@ class Storage:
         self._temporary.mkdir(exist_ok=True)
         _assert_no_links(self._temporary)
 
-    def _copy_stream(self, source: BinaryIO, target: BinaryIO, max_file_bytes: int) -> tuple[str, int]:
+    def _copy_stream(self, source: BinaryIO, target: BinaryIO | None, max_file_bytes: int) -> tuple[str, int]:
         digest = hashlib.sha256()
         size = 0
         while True:
@@ -112,7 +115,8 @@ class Storage:
             size += len(chunk)
             if size > max_file_bytes:
                 raise FileTooLargeError("原本が設定されたサイズ上限を超えています")
-            target.write(chunk)
+            if target is not None:
+                target.write(chunk)
             digest.update(chunk)
         return digest.hexdigest(), size
 
@@ -200,7 +204,8 @@ class Storage:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def _snapshot_once(self, item: ScanItem, max_file_bytes: int) -> StoredAsset:
+    def _snapshot_once(self, item: ScanItem, max_file_bytes: int,
+                       known: dict | None = None) -> StoredAsset:
         temporary = None
         path = item.path.absolute()
         try:
@@ -214,12 +219,16 @@ class Storage:
                 before = os.fstat(source.fileno())
                 if _signature(before_path) != _signature(before):
                     raise SourceChangedError("取得開始時に原本の変更を検出しました")
-                _assert_no_links(self._temporary)
-                with tempfile.NamedTemporaryFile(dir=self._temporary, delete=False) as target:
-                    temporary = Path(target.name)
-                    digest, size = self._copy_stream(source, target, max_file_bytes)
-                    target.flush()
-                    os.fsync(target.fileno())
+                verify_only = known is not None and before.st_size == known["byte_size"]
+                if verify_only:
+                    digest, size = self._copy_stream(source, None, max_file_bytes)
+                else:
+                    _assert_no_links(self._temporary)
+                    with tempfile.NamedTemporaryFile(dir=self._temporary, delete=False) as target:
+                        temporary = Path(target.name)
+                        digest, size = self._copy_stream(source, target, max_file_bytes)
+                        target.flush()
+                        os.fsync(target.fileno())
                 after = os.fstat(source.fileno())
                 try:
                     _assert_no_links(path)
@@ -231,7 +240,18 @@ class Storage:
                     raise SourceChangedError("コピー中に原本の変更を検出しました")
             mime_type = mimetypes.guess_type(item.path.name)[0] or "application/octet-stream"
             modified_at = datetime.fromtimestamp(after.st_mtime, tz=timezone.utc)
-            return self._install(temporary, digest, size, mime_type, modified_at)
+            if verify_only:
+                if "sha256:" + digest == known["asset_id"]:
+                    try:
+                        stored = self.verify(known["asset_id"], known["storage_key"], size)
+                        return replace(stored, mime_type=mime_type, source_modified_at=modified_at,
+                                       source_bytes_read=size, reused=True)
+                    except StoredAssetMissingError:
+                        pass  # 欠落だけは原本から修復。破損を上書きしない。
+                copied = self._snapshot_once(item, max_file_bytes)
+                return replace(copied, source_bytes_read=size + copied.source_bytes_read)
+            return replace(self._install(temporary, digest, size, mime_type, modified_at),
+                           source_bytes_read=size, temporary_bytes_written=size)
         except OSError as exc:
             if exc.errno in (errno.ELOOP, errno.ENOTDIR):
                 raise UnsafePathError("原本の経路が変更されたため取得を拒否しました") from None
@@ -240,12 +260,13 @@ class Storage:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def snapshot(self, item: ScanItem, max_file_bytes: int, retries: int) -> StoredAsset:
+    def snapshot(self, item: ScanItem, max_file_bytes: int, retries: int,
+                 known: dict | None = None) -> StoredAsset:
         if isinstance(max_file_bytes, bool) or max_file_bytes < 1 or isinstance(retries, bool) or retries < 0:
             raise ValueError("サイズ上限と再試行回数が不正です")
         for attempt in range(retries + 1):
             try:
-                return self._snapshot_once(item, max_file_bytes)
+                return self._snapshot_once(item, max_file_bytes, known)
             except SourceChangedError:
                 if attempt == retries:
                     raise SourceChangedError("原本の変更が継続したため取得を保留しました") from None

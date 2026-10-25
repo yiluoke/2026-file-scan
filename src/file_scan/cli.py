@@ -13,14 +13,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.engine import make_url
 
 from file_scan import __version__
 from file_scan.collector import collect
 from file_scan.config import ConfigError, load_config
-from file_scan.db import migrate, open_database, tables
+from file_scan.db import SCHEMA_VERSION, migrate, open_database, tables
+from file_scan.embeddings import embed
 from file_scan.pipeline import PipelineError, ingest, require_schema, write_json
+from file_scan.profiles import conversion_profile, digest
+from file_scan.state import current_chunks, current_documents, input_hash_sql
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -31,6 +34,7 @@ def _parser() -> argparse.ArgumentParser:
         ("scan", "対象と除外の棚卸し。原本コピー・DB更新はしません"),
         ("init-db", "登録用のDBテーブルを非破壊で初期化"),
         ("ingest", "収集・抽出し、DBへ下書き登録"),
+        ("embed", "設定で有効な場合、OpenAI APIでチャンクのEmbeddingを生成"),
         ("status", "指定ナレッジの登録状況を表示"),
     ):
         subcommand = commands.add_parser(command, help=description)
@@ -41,7 +45,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _status(engine, knowledge_id: str) -> dict:
+def _status(engine, knowledge_id: str, settings=None) -> dict:
     require_schema(engine)
     members = tables["knowledge_documents"]
     generations = tables["extraction_generations"]
@@ -49,15 +53,40 @@ def _status(engine, knowledge_id: str) -> dict:
         catalog = conn.execute(select(tables["knowledge_bases"]).where(
             tables["knowledge_bases"].c.knowledge_id == knowledge_id)).mappings().first()
         if catalog is None:
-            return {"knowledge_id": knowledge_id, "documents": 0, "generations": {}}
+            return {"knowledge_id": knowledge_id, "documents": 0, "generations": {},
+                    "historical_generations": {}, "embeddings": {}}
         documents = conn.execute(select(func.count()).select_from(members).where(
             members.c.knowledge_id == knowledge_id, members.c.included.is_(True))).scalar()
-        rows = conn.execute(select(generations.c.processing_status, func.count()).join(
+        history = conn.execute(select(generations.c.processing_status, func.count()).join(
             members, members.c.document_id == generations.c.document_id
         ).where(members.c.knowledge_id == knowledge_id).group_by(generations.c.processing_status))
+        historical = dict(history.all())
+        formats = conn.execute(select(tables["documents"].c.format).join(members).where(
+            members.c.knowledge_id == knowledge_id, members.c.included.is_(True)).distinct()).scalars().all()
+    revisions = {fmt: conversion_profile(settings, fmt)[0] for fmt in formats} if settings else None
+    with engine.connect() as conn:
+        current = current_documents(knowledge_id, revisions)
+        states = dict(conn.execute(select(current.c.state, func.count()).group_by(current.c.state)).all())
+        chunks, embeddings = tables["chunks"], tables["chunk_embeddings"]
+        graph = current_chunks(knowledge_id, revisions)
+        total = conn.execute(select(func.count()).select_from(graph)).scalar_one()
+        profiles = list(conn.execute(select(tables["embedding_profiles"].c.embedding_profile_id)).scalars())
+        if settings:
+            configured = digest({"provider": "openai", "model": settings.embedding.model,
+                                 "dimensions": settings.embedding.dimensions, "input_version": "search_text-v1"})
+            if configured not in profiles:
+                profiles.append(configured)
+        readiness = {}
+        for profile_id in profiles:
+            ready = conn.execute(select(func.count()).select_from(graph.join(embeddings, and_(
+                embeddings.c.generation_id == chunks.c.generation_id,
+                embeddings.c.chunk_id == chunks.c.chunk_id,
+                embeddings.c.embedding_profile_id == profile_id,
+                embeddings.c.input_hash == input_hash_sql(conn, chunks.c.search_text))))).scalar_one()
+            readiness[profile_id] = {"ready": ready, "pending": total - ready, "total": total}
         return {"knowledge_id": knowledge_id, "documents": documents,
                 "scan_status": catalog["scan_status"], "search_enabled": catalog["enabled"],
-                "generations": dict(rows.all())}
+                "generations": states, "historical_generations": historical, "embeddings": readiness}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -87,10 +116,15 @@ def main(argv: list[str] | None = None) -> int:
         engine = open_database(settings.database_url)
         if arguments.command == "init-db":
             migrate(engine)
-            print("DBスキーマv1を確認しました。データの削除や検索公開は行いません。")
+            print(f"DBスキーマv{SCHEMA_VERSION}を確認しました。データの削除や検索公開は行いません。")
             return 0
+        if arguments.command == "embed":
+            report = embed(settings, engine)
+            print(json.dumps({key: value for key, value in report.items() if key != "files"},
+                             ensure_ascii=False))
+            return 0 if report["status"] in {"succeeded", "disabled"} else 2
         if arguments.command == "status":
-            print(json.dumps(_status(engine, settings.knowledge_id), ensure_ascii=False))
+            print(json.dumps(_status(engine, settings.knowledge_id, settings), ensure_ascii=False))
             return 0
         report = ingest(settings, engine, retry_partial=arguments.retry_partial)
         print(json.dumps({"status": report["status"], **report["summary"],
