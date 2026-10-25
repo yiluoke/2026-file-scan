@@ -8,12 +8,18 @@
 
 ## 最初に動かす
 
-Python 3.12以上を使用する。以下はmacOS／Linuxのシェル例。
+別環境へ導入する場合は、[環境構築手順](docs/implementation/environment-setup.md)を参照。Pythonと必要ライブラリ、DB・テーブル、モデル、認証設定、公開サンプルによる確認を順にまとめている。Windows PowerShellと閉域環境の手順も記載する。
+
+本番導入先は**Windowsホスト上のUbuntu 26.04 VM**。[Ubuntu VM専用の構築・起動手順](docs/implementation/ubuntu-26.04-vm.md)にUbuntu標準Python 3.14の準備、DB拡張、共有フォルダのマウント、起動時の確認をまとめている。
+
+Ubuntu 26.04の標準版に合わせ、Python 3.14（確認版3.14.4）を使用する。[版の対応表と互換例外](docs/implementation/ubuntu-26.04-python.md)も参照。以下はmacOS／Linuxのシェル例。
 
 ```sh
-python -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements/ubuntu-26.04.lock
+python -m pip install --no-deps --no-build-isolation -e '.[dev,search]'
+python scripts/check_python_environment.py
 cp config.example.yaml config.local.yaml
 ```
 
@@ -59,7 +65,7 @@ DoclingによるPDFの段組み・表・領域座標は抽出するが、全原�
 
 同梱設定の収集拡張子はTXT・MD・PY・XLSX・XLSM・DOCX・PDFに限定している。SQLやログ等も収集する場合は、`include_extensions`へ対象拡張子を追加する。
 
-DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`はローカル抽出までを行い、`embed`が有効な場合に抽出テキストを外部APIへ送信する。画像API、検索API、Dify、利用者別ACL、検索公開、レビュー承認画面は未実装。
+DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`はローカル抽出までを行い、`embed`が有効な場合に抽出テキストを外部APIへ送信する。画像解析API、Dify本体、利用者別ACL、レビュー承認画面は未実装。検索APIと管理者コマンドによる明示公開は[検索APIの操作手順](docs/implementation/search-api.md)へ追加した。取り込みデータのdraftは維持する。
 
 チャンク本文は既定1800文字以内、見出し・列見出しを含む検索入力は既定8191トークン以内に分割する。`cl100k_base`の実測値を`chunks.token_count`と`chunk_embeddings.input_tokens`へ保存する。表は行を優先し、後続チャンクの検索文脈にも列見出しを引き継ぐ。
 
@@ -83,6 +89,8 @@ file-scan ingest --config config.local.yaml --retry-partial
 
 ## PostgreSQL＋pgvectorとDocling
 
+別環境への新規導入用DDLは[sql/postgresql/schema-v3.sql](sql/postgresql/schema-v3.sql)。現行20テーブル・制約・12索引・pgvector有効化・スキーマ版登録を含む。[SQLの実行手順](sql/postgresql/README.md)を参照する。
+
 標準設定はPostgreSQLを使用する。[ローカルDBの手順](docs/implementation/local-postgresql.md)にmacOS用Postgres.appと[Compose](compose.yaml)の導入・起動・停止方法を記載する。Composeもpgvectorを含み、開発用とテスト用のDBで拡張を有効化する。DB接続先は`FILE_SCAN_DATABASE_URL`環境変数でYAMLより優先して指定できる。認証情報をGitへ登録しない。`.env.example`は設定例であり、Python CLIは`.env`を自動で読み込まない。
 
 PDFは**Doclingの実モデルによるレイアウト・表構造抽出**を標準とする。Doclingは通常の依存に含む。初回に次を実行してモデルを事前取得する。
@@ -97,6 +105,8 @@ docling_artifacts_path: data/models/docling
 ```
 
 CPU固定・OCR無効・外部サービス無効で処理する。公開PDF2件を実モデルで検証し、本文・表・bboxを確認する。画像の意味解析とOCRは後続処理。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
+
+PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。新規環境は[導入手順](docs/implementation/pgroonga.md)を参照。現在のComposeイメージはpgvectorのみ。検索APIは権限制御を保留したローカル試作として実装済み。[操作・公開・Dify接続手順](docs/implementation/search-api.md)を参照。
 
 ## コードを読む順序
 
@@ -116,14 +126,29 @@ CPU固定・OCR無効・外部サービス無効で処理する。公開PDF2件�
 
 検証は`.env`を読み込み、`python scripts/test_postgres.py`と`python -m ruff check src tests scripts`を実行する。実PostgreSQLとpgvectorの検証を含む。`python -m pytest`単独では、テスト用接続先が未設定の場合に実DBテストをスキップする。
 
+## 検索API
+
+取り込みCLIから独立した`file-search`を追加した。ソースは取り込みが`src/file_scan/`、検索が`src/search/`の並列構成とする。上記の固定依存の導入には検索用extraも含まれる。取り込みv3の初期化後に次を実行する。
+
+```sh
+file-search init-db --config config.local.yaml
+file-search create-release --config config.local.yaml --release <対象業務版>
+```
+
+確認した文書・世代を`file-search publish`で明示公開し、`FILE_SCAN_SEARCH_API_KEY`を設定して`file-search serve --config config.local.yaml`で起動する。管理者コマンド、入力例、実Embedding設定、Dify接続は[検索APIの操作手順](docs/implementation/search-api.md)を参照。
+
+検索表は取り込みv3と別の版で追加する。既存のdraft・世代選択・キャッシュは維持し、既存資料を自動公開しない。開発DBには検索表のみを追加済み。
+
 ## 設計資料
 
 | 機能 | 資料 | 設計レベル |
 | --- | --- | --- |
 | 1. 文書変換処理 | [文書変換処理](docs/design/01-document-conversion.md) | 詳細設計案 |
-| 2. 検索基盤 | [検索基盤](docs/design/02-search-platform.md) | 概要設計案 |
+| 2. 検索基盤・API | [検索基盤・検索API](docs/design/02-search-platform.md) | 検索処理・API契約の設計案 |
 | 3. LLM＋チャット画面 | [LLM＋チャット画面](docs/design/03-llm-chat.md) | 概要設計案 |
 | 共通. データベース | [テーブル設計](docs/design/04-database-tables.md) | 論理・カラム・制約・索引の詳細設計案 |
+
+検索APIの見直しと参考にした実装は[GitHub検索API比較](docs/research/2026-10-25-github-search-api-comparison.md)を参照。検索APIと検索専用コピーへの明示公開は実装済み。文書ACL・SSOは保留。
 
 設計資料は最終構成の設計案を含む。第1版の実装範囲と制限は本READMEと[操作・実装説明](docs/implementation/first-version.md)を参照し、設計に記載した機能がすべて実装済みとは扱わない。社内実データによる抽出精度・処理性能の検証は今後行う。
 

@@ -4,11 +4,12 @@ PDFの標準抽出方式はDocling。事前取得したレイアウト解析モ�
 
 ## 導入と設定
 
-Docling 2.140.0は通常の依存関係に含める。
+公式`docling-slim==2.140.0`の`convert-core`・`extract-core`・`format-pdf`・`models-local`を依存に含める。OpenCVも明示導入する。実行するDocling本体と実モデルは従来と同じ。独自チャンク処理で使わないchunking・OCR用追加依存を避ける。Python 3.14.4で実PDFの本文・表・bboxを検証した。版の固定理由は[Python版整合の記録](ubuntu-26.04-python.md)を参照。
 
 ```sh
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements/ubuntu-26.04.lock
+python -m pip install --no-deps --no-build-isolation -e '.[dev,search]'
 python scripts/download_docling_models.py --config config.local.yaml
 ```
 

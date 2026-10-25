@@ -1,4 +1,4 @@
-"""インストール済みのPostgreSQL＋pgvectorで検証する。テスト専用DBを使用する。
+"""PostgreSQL＋pgvector＋PGroongaで検証する。テスト専用DBを使用する。
 
 実行前に.envをシェルへ読み込む。pgserverによる一時DBは使用しない。
 """
@@ -26,9 +26,14 @@ def main() -> int:
             vector = connection.execute(text(
                 "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
             )).scalar_one()
-        print(f"検証用PostgreSQL: {version} / pgvector: {vector}", flush=True)
+            pgroonga = connection.execute(text(
+                "SELECT extversion FROM pg_extension WHERE extname = 'pgroonga'"
+            )).scalar_one()
+        print(f"検証用PostgreSQL: {version} / pgvector: {vector} / PGroonga: {pgroonga}",
+              flush=True)
     except Exception as exc:
-        print(f"検証用DB・vector拡張を確認できません ({type(exc).__name__})。", file=sys.stderr)
+        print(f"検証用DB・vector/pgroonga拡張を確認できません ({type(exc).__name__})。",
+              file=sys.stderr)
         return 1
     finally:
         engine.dispose()

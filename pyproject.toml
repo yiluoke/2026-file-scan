@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools==78.1.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,27 +7,30 @@ name = "file-scan"
 version = "0.1.0"
 description = "ファイルサーバーの文書を収集・変換し、DBへ下書き登録するCLI"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14,<3.15"
 dependencies = [
-    "SQLAlchemy==2.1.5",
-    "psycopg[binary]==3.3.6",
+    "SQLAlchemy==2.0.45",
+    "psycopg[binary]==3.3.2",
     "PyYAML==6.0.3",
     "openpyxl==3.1.5",
     "python-docx==1.2.0",
-    "pypdf==6.10.0",
-    "charset-normalizer==3.5.2",
-    "Pillow==12.3.0",
-    "openai==3.37.0",
+    "pypdf==6.9.2",
+    "charset-normalizer==3.4.4",
+    "Pillow==12.1.1",
+    "openai==2.21.0",
     "pgvector==0.5.1",
-    "tiktoken==0.14.0",
-    "docling==2.140.0",
+    "tiktoken==0.12.0",
+    "docling-slim[convert-core,extract-core,format-pdf,models-local]==2.140.0",
+    "opencv-python-headless==4.10.0.84",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1", "ruff==0.17.1", "reportlab==4.4.9"]
+search = ["fastapi==0.118.0", "starlette==0.48.0", "uvicorn==0.38.0", "httpx==0.28.1", "greenlet==3.3.2"]
+dev = ["pytest==9.0.2", "ruff==0.17.1", "reportlab==4.4.10", "httpx==0.28.1"]
 
 [project.scripts]
 file-scan = "file_scan.cli:main"
+file-search = "search.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -40,7 +43,7 @@ testpaths = ["tests"]
 pythonpath = ["src"]
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]

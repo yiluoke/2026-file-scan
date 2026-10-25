@@ -30,7 +30,11 @@ def extraction_profile(settings: Settings, file_format: str) -> tuple[str, dict]
     if file_format == "pdf":
         profile["pdf_backend"] = settings.pdf_backend
         if settings.pdf_backend == "docling":
-            dependencies += ("docling", "docling-core", "docling-parse", "docling-ibm-models", "torch")
+            dependencies += (
+                "docling", "docling-slim", "docling-core", "docling-parse", "docling-ibm-models",
+                "torch", "torchvision", "transformers", "huggingface-hub",
+                "opencv-python-headless", "numpy", "scipy",
+            )
             profile["models"] = verify_models(settings.docling_artifacts_path)
             profile["options"] = {"device": "cpu", "ocr": False, "table_structure": True,
                                   "picture_images": True, "remote_services": False, "threads": 2}

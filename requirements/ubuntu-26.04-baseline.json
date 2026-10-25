@@ -1,0 +1,998 @@
+{
+  "checked_on": "2026-10-25",
+  "ubuntu_release": "26.04 LTS (resolute)",
+  "pockets": [
+    "resolute",
+    "resolute-updates",
+    "resolute-security"
+  ],
+  "components": [
+    "main",
+    "universe"
+  ],
+  "index_architecture": "amd64",
+  "scope": "Pythonの上流版を合わせる。UbuntuのDebianパッチやLinuxバイナリ自体の再現ではない。",
+  "python": {
+    "upstream": "3.14.4",
+    "ubuntu_package": "python3.14",
+    "ubuntu_debian_version": "3.14.4-1ubuntu0.2"
+  },
+  "sources": [
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute/main/binary-amd64/Packages.xz",
+      "sha256": "ed9ac41cb263efaecc5a06a0742dc56570e2fb5ff94c4f2e4b2fbdcddd73cf24",
+      "pocket": "resolute",
+      "component": "main"
+    },
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute/universe/binary-amd64/Packages.xz",
+      "sha256": "1587be86d66d38542325215e0e109f75bd695c8f24d793ace2762038a6ad581e",
+      "pocket": "resolute",
+      "component": "universe"
+    },
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute-updates/main/binary-amd64/Packages.xz",
+      "sha256": "d80146052e4e2779640a15acff6e3ba12d23cf6165bd1ed5d460c8734dbeb301",
+      "pocket": "resolute-updates",
+      "component": "main"
+    },
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute-updates/universe/binary-amd64/Packages.xz",
+      "sha256": "ab18c0ed8395d3a9773a029d83133ea7515d02a8a21c0c56dd8d7fc828efe332",
+      "pocket": "resolute-updates",
+      "component": "universe"
+    },
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute-security/main/binary-amd64/Packages.xz",
+      "sha256": "c9f4f90adfc5fcb1228e0aea6369c868ffa227b005782a1738ecdbb47fc46d56",
+      "pocket": "resolute-security",
+      "component": "main"
+    },
+    {
+      "url": "https://archive.ubuntu.com/ubuntu/dists/resolute-security/universe/binary-amd64/Packages.xz",
+      "sha256": "a11e53febca7d23560c132d87df16f4bbfa674e90619038d32ddfe74ea5363ab",
+      "pocket": "resolute-security",
+      "component": "universe"
+    }
+  ],
+  "packages": [
+    {
+      "name": "accelerate",
+      "version": "1.12.0",
+      "marker": null,
+      "ubuntu_package": "python3-accelerate",
+      "ubuntu_debian_version": "1.12.0-1",
+      "ubuntu_upstream_version": "1.12.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "annotated-types",
+      "version": "0.7.0",
+      "marker": null,
+      "ubuntu_package": "python3-annotated-types",
+      "ubuntu_debian_version": "0.7.0-1",
+      "ubuntu_upstream_version": "0.7.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "anyio",
+      "version": "4.11.0",
+      "marker": null,
+      "ubuntu_package": "python3-anyio",
+      "ubuntu_debian_version": "4.11.0-3",
+      "ubuntu_upstream_version": "4.11.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "attrs",
+      "version": "25.4.0",
+      "marker": null,
+      "ubuntu_package": "python3-attr",
+      "ubuntu_debian_version": "25.4.0-1build1",
+      "ubuntu_upstream_version": "25.4.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "certifi",
+      "version": "2026.1.4",
+      "marker": null,
+      "ubuntu_package": "python3-certifi",
+      "ubuntu_debian_version": "2026.1.4+ds-1",
+      "ubuntu_upstream_version": "2026.1.4",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "charset-normalizer",
+      "version": "3.4.4",
+      "marker": null,
+      "ubuntu_package": "python3-charset-normalizer",
+      "ubuntu_debian_version": "3.4.4-2build1",
+      "ubuntu_upstream_version": "3.4.4",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "click",
+      "version": "8.2.0",
+      "marker": null,
+      "ubuntu_package": "python3-click",
+      "ubuntu_debian_version": "8.2.0+0.really.8.1.8-1build1",
+      "ubuntu_upstream_version": "8.2.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "colorama",
+      "version": "0.4.6",
+      "marker": "sys_platform == \"win32\"",
+      "ubuntu_package": "python3-colorama",
+      "ubuntu_debian_version": "0.4.6-4build1",
+      "ubuntu_upstream_version": "0.4.6",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "defusedxml",
+      "version": "0.7.1",
+      "marker": null,
+      "ubuntu_package": "python3-defusedxml",
+      "ubuntu_debian_version": "0.7.1-3build1",
+      "ubuntu_upstream_version": "0.7.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "distro",
+      "version": "1.9.0",
+      "marker": null,
+      "ubuntu_package": "python3-distro",
+      "ubuntu_debian_version": "1.9.0-1build1",
+      "ubuntu_upstream_version": "1.9.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "doclang",
+      "version": "0.8.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "docling-core",
+      "version": "2.104.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "docling-ibm-models",
+      "version": "4.0.4",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "docling-parse",
+      "version": "7.23.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "docling-slim",
+      "version": "2.140.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "et-xmlfile",
+      "version": "2.0.0",
+      "marker": null,
+      "ubuntu_package": "python3-et-xmlfile",
+      "ubuntu_debian_version": "2.0.0-2",
+      "ubuntu_upstream_version": "2.0.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "faker",
+      "version": "39.0.0",
+      "marker": null,
+      "ubuntu_package": "faker",
+      "ubuntu_debian_version": "39.0.0-1",
+      "ubuntu_upstream_version": "39.0.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "fastapi",
+      "version": "0.118.0",
+      "marker": null,
+      "ubuntu_package": "python3-fastapi",
+      "ubuntu_debian_version": "0.118.0-1",
+      "ubuntu_upstream_version": "0.118.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "filelock",
+      "version": "3.20.3",
+      "marker": null,
+      "ubuntu_package": "python3-filelock",
+      "ubuntu_debian_version": "3.20.3-1",
+      "ubuntu_upstream_version": "3.20.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "filetype",
+      "version": "1.2.0",
+      "marker": null,
+      "ubuntu_package": "python3-filetype",
+      "ubuntu_debian_version": "1.2.0-1build1",
+      "ubuntu_upstream_version": "1.2.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "fsspec",
+      "version": "2025.12.0",
+      "marker": null,
+      "ubuntu_package": "python3-fsspec",
+      "ubuntu_debian_version": "2025.12.0-1",
+      "ubuntu_upstream_version": "2025.12.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "greenlet",
+      "version": "3.3.2",
+      "marker": null,
+      "ubuntu_package": "python3-greenlet",
+      "ubuntu_debian_version": "3.3.2-1",
+      "ubuntu_upstream_version": "3.3.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "h11",
+      "version": "0.16.0",
+      "marker": null,
+      "ubuntu_package": "python3-h11",
+      "ubuntu_debian_version": "0.14.0-1.1",
+      "ubuntu_upstream_version": "0.14.0",
+      "status": "compatibility_exception",
+      "reason": "PyPI版httpcore 1.0.9はh11>=0.16を要求。Ubuntu版の配布依存とは異なる。"
+    },
+    {
+      "name": "hf-xet",
+      "version": "1.7.0",
+      "marker": "platform_machine == \"aarch64\" or platform_machine == \"amd64\" or platform_machine == \"arm64\" or platform_machine == \"x86_64\"",
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "httpcore",
+      "version": "1.0.9",
+      "marker": null,
+      "ubuntu_package": "python3-httpcore",
+      "ubuntu_debian_version": "1.0.9-1",
+      "ubuntu_upstream_version": "1.0.9",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "httpx",
+      "version": "0.28.1",
+      "marker": null,
+      "ubuntu_package": "python3-httpx",
+      "ubuntu_debian_version": "0.28.1-1build1",
+      "ubuntu_upstream_version": "0.28.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "huggingface-hub",
+      "version": "0.36.2",
+      "marker": null,
+      "ubuntu_package": "python3-huggingface-hub",
+      "ubuntu_debian_version": "1.2.2-2",
+      "ubuntu_upstream_version": "1.2.2",
+      "status": "compatibility_exception",
+      "reason": "実PDFで表領域を保持できたTransformers 4.57.6はhuggingface-hub<1を要求。"
+    },
+    {
+      "name": "idna",
+      "version": "3.11",
+      "marker": null,
+      "ubuntu_package": "python3-idna",
+      "ubuntu_debian_version": "3.11-1ubuntu0.1",
+      "ubuntu_upstream_version": "3.11",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "iniconfig",
+      "version": "2.1.0",
+      "marker": null,
+      "ubuntu_package": "python3-iniconfig",
+      "ubuntu_debian_version": "2.1.0-2",
+      "ubuntu_upstream_version": "2.1.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "jinja2",
+      "version": "3.1.6",
+      "marker": null,
+      "ubuntu_package": "python3-jinja2",
+      "ubuntu_debian_version": "3.1.6-1build1",
+      "ubuntu_upstream_version": "3.1.6",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "jiter",
+      "version": "0.18.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "jsonref",
+      "version": "1.1.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "jsonschema",
+      "version": "4.19.2",
+      "marker": null,
+      "ubuntu_package": "python3-jsonschema",
+      "ubuntu_debian_version": "4.19.2-6ubuntu2",
+      "ubuntu_upstream_version": "4.19.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "jsonschema-specifications",
+      "version": "2023.12.1",
+      "marker": null,
+      "ubuntu_package": "python3-jsonschema-specifications",
+      "ubuntu_debian_version": "2023.12.1-4",
+      "ubuntu_upstream_version": "2023.12.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "langcodes",
+      "version": "3.5.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "latex2mathml",
+      "version": "3.81.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "lxml",
+      "version": "6.0.2",
+      "marker": null,
+      "ubuntu_package": "python3-lxml",
+      "ubuntu_debian_version": "6.0.2-1ubuntu0.1",
+      "ubuntu_upstream_version": "6.0.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "markdown-it-py",
+      "version": "3.0.0",
+      "marker": null,
+      "ubuntu_package": "python3-markdown-it",
+      "ubuntu_debian_version": "3.0.0-3build1",
+      "ubuntu_upstream_version": "3.0.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "markupsafe",
+      "version": "3.0.3",
+      "marker": null,
+      "ubuntu_package": "python3-markupsafe",
+      "ubuntu_debian_version": "3.0.3-1build1",
+      "ubuntu_upstream_version": "3.0.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "mdurl",
+      "version": "0.1.2",
+      "marker": null,
+      "ubuntu_package": "python3-mdurl",
+      "ubuntu_debian_version": "0.1.2-1build1",
+      "ubuntu_upstream_version": "0.1.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "mpmath",
+      "version": "1.3.0",
+      "marker": null,
+      "ubuntu_package": "python3-mpmath",
+      "ubuntu_debian_version": "1.3.0-2",
+      "ubuntu_upstream_version": "1.3.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "networkx",
+      "version": "3.2.1",
+      "marker": null,
+      "ubuntu_package": "python3-networkx",
+      "ubuntu_debian_version": "3.2.1-4ubuntu2",
+      "ubuntu_upstream_version": "3.2.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "numpy",
+      "version": "2.3.5",
+      "marker": null,
+      "ubuntu_package": "python3-numpy",
+      "ubuntu_debian_version": "1:2.3.5+ds-3ubuntu1",
+      "ubuntu_upstream_version": "2.3.5",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "openai",
+      "version": "2.21.0",
+      "marker": null,
+      "ubuntu_package": "python3-openai",
+      "ubuntu_debian_version": "2.21.0-1",
+      "ubuntu_upstream_version": "2.21.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "opencv-python-headless",
+      "version": "4.10.0.84",
+      "marker": null,
+      "ubuntu_package": "python3-opencv",
+      "ubuntu_debian_version": "4.10.0+dfsg-7ubuntu5",
+      "ubuntu_upstream_version": "4.10.0",
+      "status": "version_mapping",
+      "note": "配布名・版表現が異なる対応版。"
+    },
+    {
+      "name": "openpyxl",
+      "version": "3.1.5",
+      "marker": null,
+      "ubuntu_package": "python3-openpyxl",
+      "ubuntu_debian_version": "3.1.5+dfsg-3",
+      "ubuntu_upstream_version": "3.1.5",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "packaging",
+      "version": "26.0",
+      "marker": null,
+      "ubuntu_package": "python3-packaging",
+      "ubuntu_debian_version": "26.0-1",
+      "ubuntu_upstream_version": "26.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pandas",
+      "version": "2.3.3",
+      "marker": null,
+      "ubuntu_package": "python3-pandas",
+      "ubuntu_debian_version": "2.3.3+dfsg-3ubuntu1",
+      "ubuntu_upstream_version": "2.3.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pgvector",
+      "version": "0.5.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "pillow",
+      "version": "12.1.1",
+      "marker": null,
+      "ubuntu_package": "python3-pil",
+      "ubuntu_debian_version": "12.1.1-2ubuntu1.3",
+      "ubuntu_upstream_version": "12.1.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pip",
+      "version": "25.1.1",
+      "marker": null,
+      "ubuntu_package": "python3-pip",
+      "ubuntu_debian_version": "25.1.1+dfsg-1ubuntu2",
+      "ubuntu_upstream_version": "25.1.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pluggy",
+      "version": "1.6.0",
+      "marker": null,
+      "ubuntu_package": "python3-pluggy",
+      "ubuntu_debian_version": "1.6.0-2",
+      "ubuntu_upstream_version": "1.6.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "polyfactory",
+      "version": "3.5.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "psutil",
+      "version": "7.1.0",
+      "marker": null,
+      "ubuntu_package": "python3-psutil",
+      "ubuntu_debian_version": "7.1.0-1ubuntu1",
+      "ubuntu_upstream_version": "7.1.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "psycopg",
+      "version": "3.3.2",
+      "marker": null,
+      "ubuntu_package": "python3-psycopg",
+      "ubuntu_debian_version": "3.3.2-1build1",
+      "ubuntu_upstream_version": "3.3.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "psycopg-binary",
+      "version": "3.3.2",
+      "marker": "implementation_name != \"pypy\"",
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "pydantic",
+      "version": "2.12.5",
+      "marker": null,
+      "ubuntu_package": "python3-pydantic",
+      "ubuntu_debian_version": "2.12.5-2",
+      "ubuntu_upstream_version": "2.12.5",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pydantic-core",
+      "version": "2.41.5",
+      "marker": null,
+      "ubuntu_package": "python3-pydantic-core",
+      "ubuntu_debian_version": "2.41.5-2build1",
+      "ubuntu_upstream_version": "2.41.5",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pydantic-settings",
+      "version": "2.14.0",
+      "marker": null,
+      "ubuntu_package": "python3-pydantic-settings",
+      "ubuntu_debian_version": "2.13.0-1",
+      "ubuntu_upstream_version": "2.13.0",
+      "status": "compatibility_exception",
+      "reason": "Docling Core 2.104.0はpydantic-settings>=2.14を要求。"
+    },
+    {
+      "name": "pygments",
+      "version": "2.19.2",
+      "marker": null,
+      "ubuntu_package": "python3-pygments",
+      "ubuntu_debian_version": "2.19.2+dfsg-1",
+      "ubuntu_upstream_version": "2.19.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pypdf",
+      "version": "6.9.2",
+      "marker": null,
+      "ubuntu_package": "python3-pypdf",
+      "ubuntu_debian_version": "6.9.2-1",
+      "ubuntu_upstream_version": "6.9.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pypdfium2",
+      "version": "5.14.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "pytest",
+      "version": "9.0.2",
+      "marker": null,
+      "ubuntu_package": "python3-pytest",
+      "ubuntu_debian_version": "9.0.2-4",
+      "ubuntu_upstream_version": "9.0.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "python-dateutil",
+      "version": "2.9.0.post0",
+      "marker": null,
+      "ubuntu_package": "python3-dateutil",
+      "ubuntu_debian_version": "2.9.0-4build1",
+      "ubuntu_upstream_version": "2.9.0",
+      "status": "version_mapping",
+      "note": "配布名・版表現が異なる対応版。"
+    },
+    {
+      "name": "python-docx",
+      "version": "1.2.0",
+      "marker": null,
+      "ubuntu_package": "python3-docx",
+      "ubuntu_debian_version": "1.2.0+dfsg-3",
+      "ubuntu_upstream_version": "1.2.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "python-dotenv",
+      "version": "1.0.1",
+      "marker": null,
+      "ubuntu_package": "python3-dotenv",
+      "ubuntu_debian_version": "1.0.1-1build1",
+      "ubuntu_upstream_version": "1.0.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pytz",
+      "version": "2025.2",
+      "marker": null,
+      "ubuntu_package": "python3-pytz",
+      "ubuntu_debian_version": "2025.2-5",
+      "ubuntu_upstream_version": "2025.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "pywin32",
+      "version": "312",
+      "marker": "sys_platform == \"win32\"",
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "marker": null,
+      "ubuntu_package": "python3-yaml",
+      "ubuntu_debian_version": "6.0.3-1build1",
+      "ubuntu_upstream_version": "6.0.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "referencing",
+      "version": "0.36.2",
+      "marker": null,
+      "ubuntu_package": "python3-referencing",
+      "ubuntu_debian_version": "0.36.2-1ubuntu2",
+      "ubuntu_upstream_version": "0.36.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "regex",
+      "version": "2025.9.18",
+      "marker": null,
+      "ubuntu_package": "python3-regex",
+      "ubuntu_debian_version": "0.1.20250918-1build1",
+      "ubuntu_upstream_version": "0.1.20250918",
+      "status": "version_mapping",
+      "note": "配布名・版表現が異なる対応版。"
+    },
+    {
+      "name": "reportlab",
+      "version": "4.4.10",
+      "marker": null,
+      "ubuntu_package": "python3-reportlab",
+      "ubuntu_debian_version": "4.4.10-1",
+      "ubuntu_upstream_version": "4.4.10",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "requests",
+      "version": "2.34.2",
+      "marker": null,
+      "ubuntu_package": "python3-requests",
+      "ubuntu_debian_version": "2.32.5+dfsg-1ubuntu1.1",
+      "ubuntu_upstream_version": "2.32.5",
+      "status": "compatibility_exception",
+      "reason": "Docling Core 2.104.0はrequests>=2.34.2を要求。"
+    },
+    {
+      "name": "rich",
+      "version": "13.9.4",
+      "marker": null,
+      "ubuntu_package": "python3-rich",
+      "ubuntu_debian_version": "13.9.4-1.2",
+      "ubuntu_upstream_version": "13.9.4",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "rpds-py",
+      "version": "0.27.1",
+      "marker": null,
+      "ubuntu_package": "python3-rpds-py",
+      "ubuntu_debian_version": "0.27.1-2ubuntu3",
+      "ubuntu_upstream_version": "0.27.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "rtree",
+      "version": "1.4.1",
+      "marker": null,
+      "ubuntu_package": "python3-rtree",
+      "ubuntu_debian_version": "1.4.1-1",
+      "ubuntu_upstream_version": "1.4.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "ruff",
+      "version": "0.17.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "safetensors",
+      "version": "0.6.2",
+      "marker": null,
+      "ubuntu_package": "python3-safetensors",
+      "ubuntu_debian_version": "0.6.2-1.1",
+      "ubuntu_upstream_version": "0.6.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "scipy",
+      "version": "1.16.3",
+      "marker": null,
+      "ubuntu_package": "python3-scipy",
+      "ubuntu_debian_version": "1.16.3-4build1",
+      "ubuntu_upstream_version": "1.16.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "setuptools",
+      "version": "78.1.1",
+      "marker": null,
+      "ubuntu_package": "python3-setuptools",
+      "ubuntu_debian_version": "78.1.1-0.1build1",
+      "ubuntu_upstream_version": "78.1.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "shellingham",
+      "version": "1.5.4",
+      "marker": null,
+      "ubuntu_package": "python3-shellingham",
+      "ubuntu_debian_version": "1.5.4-1build1",
+      "ubuntu_upstream_version": "1.5.4",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "marker": null,
+      "ubuntu_package": "python3-six",
+      "ubuntu_debian_version": "1.17.0-2build1",
+      "ubuntu_upstream_version": "1.17.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "sniffio",
+      "version": "1.3.1",
+      "marker": null,
+      "ubuntu_package": "python3-sniffio",
+      "ubuntu_debian_version": "1.3.1-1",
+      "ubuntu_upstream_version": "1.3.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "sqlalchemy",
+      "version": "2.0.45",
+      "marker": null,
+      "ubuntu_package": "python3-sqlalchemy",
+      "ubuntu_debian_version": "2.0.45+ds1-1build1",
+      "ubuntu_upstream_version": "2.0.45",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "starlette",
+      "version": "0.48.0",
+      "marker": null,
+      "ubuntu_package": "python3-starlette",
+      "ubuntu_debian_version": "0.50.0-1",
+      "ubuntu_upstream_version": "0.50.0",
+      "status": "compatibility_exception",
+      "reason": "PyPI版FastAPI 0.118.0はStarlette<0.49を要求。Ubuntu標準の0.50.0との組合せはPyPIの依存条件を満たさない。"
+    },
+    {
+      "name": "sympy",
+      "version": "1.14.0",
+      "marker": null,
+      "ubuntu_package": "python3-sympy",
+      "ubuntu_debian_version": "1.14.0-2",
+      "ubuntu_upstream_version": "1.14.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "tabulate",
+      "version": "0.9.0",
+      "marker": null,
+      "ubuntu_package": "python3-tabulate",
+      "ubuntu_debian_version": "0.9.0-1build1",
+      "ubuntu_upstream_version": "0.9.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "tiktoken",
+      "version": "0.12.0",
+      "marker": null,
+      "ubuntu_package": "python3-tiktoken",
+      "ubuntu_debian_version": "0.12.0-2build1",
+      "ubuntu_upstream_version": "0.12.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "tokenizers",
+      "version": "0.22.2",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "torch",
+      "version": "2.9.1",
+      "marker": "sys_platform == \"darwin\"",
+      "ubuntu_package": "python3-torch",
+      "ubuntu_debian_version": "2.9.1+dfsg-1~exp1ubuntu2",
+      "ubuntu_upstream_version": "2.9.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "torch",
+      "version": "2.9.1+cpu",
+      "marker": "sys_platform != \"darwin\"",
+      "ubuntu_package": "python3-torch",
+      "ubuntu_debian_version": "2.9.1+dfsg-1~exp1ubuntu2",
+      "ubuntu_upstream_version": "2.9.1",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "torchvision",
+      "version": "0.24.1",
+      "marker": "(platform_machine == \"aarch64\" and sys_platform == \"linux\") or sys_platform == \"darwin\"",
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "torchvision",
+      "version": "0.24.1+cpu",
+      "marker": "(platform_machine != \"aarch64\" and sys_platform == \"linux\") or (sys_platform != \"darwin\" and sys_platform != \"linux\")",
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "tqdm",
+      "version": "4.67.3",
+      "marker": null,
+      "ubuntu_package": "python3-tqdm",
+      "ubuntu_debian_version": "4.67.3-1build1",
+      "ubuntu_upstream_version": "4.67.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "transformers",
+      "version": "4.57.6",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "supplemental",
+      "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "typer",
+      "version": "0.19.2",
+      "marker": null,
+      "ubuntu_package": "python3-typer",
+      "ubuntu_debian_version": "0.19.2-1",
+      "ubuntu_upstream_version": "0.19.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "typing-extensions",
+      "version": "4.15.0",
+      "marker": null,
+      "ubuntu_package": "python3-typing-extensions",
+      "ubuntu_debian_version": "4.15.0-2",
+      "ubuntu_upstream_version": "4.15.0",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "typing-inspection",
+      "version": "0.4.2",
+      "marker": null,
+      "ubuntu_package": "python3-typing-inspection",
+      "ubuntu_debian_version": "0.4.2-1",
+      "ubuntu_upstream_version": "0.4.2",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "tzdata",
+      "version": "2026.5",
+      "marker": null,
+      "note": "IANA 2026e = PyPI tzdata 2026.5",
+      "ubuntu_package": "tzdata",
+      "ubuntu_debian_version": "2026e-0ubuntu0.26.04.1",
+      "ubuntu_upstream_version": "2026.5",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "urllib3",
+      "version": "2.6.3",
+      "marker": null,
+      "ubuntu_package": "python3-urllib3",
+      "ubuntu_debian_version": "2.6.3-1ubuntu1.2",
+      "ubuntu_upstream_version": "2.6.3",
+      "status": "standard_upstream"
+    },
+    {
+      "name": "uvicorn",
+      "version": "0.38.0",
+      "marker": null,
+      "ubuntu_package": "python3-uvicorn",
+      "ubuntu_debian_version": "0.38.0-1",
+      "ubuntu_upstream_version": "0.38.0",
+      "status": "standard_upstream"
+    }
+  ]
+}

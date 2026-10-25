@@ -2,13 +2,12 @@
 
 import argparse
 import hashlib
-import importlib.metadata
 import json
 import os
 from pathlib import Path
 
 from file_scan.config import load_config
-from file_scan.models import LOCK_PATH, verify_models
+from file_scan.models import LOCK_PATH, docling_version, verify_models
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,10 +31,10 @@ def download(config: Path, *, update_lock: bool = False, verify_only: bool = Fal
                   ["*.json", "*.safetensors", "*.bin", "README.md", "LICENSE*"]),
                  ("docling-project/docling-models", "v2.3.0",
                   ["model_artifacts/tableformer/accurate/*", "README.md", "LICENSE*"])]
-        lock = {"version": 1, "docling": importlib.metadata.version("docling"), "models": [
+        lock = {"version": 1, "docling": docling_version(), "models": [
             {"repo_id": repo, "revision": HfApi().model_info(repo, revision=revision).sha,
              "allow_patterns": patterns} for repo, revision, patterns in specs]}
-    if lock["docling"] != importlib.metadata.version("docling"):
+    if lock["docling"] != docling_version():
         raise RuntimeError("Doclingの版がモデルlockと異なります。依存版を確認してください")
     records = []
     for model in lock["models"]:
@@ -61,7 +60,7 @@ def download(config: Path, *, update_lock: bool = False, verify_only: bool = Fal
             raise RuntimeError("取得したファイルとモデルlockが一致しません")
         model["files"] = files
         records.append({"repo_id": repo, "revision": revision, "files": files})
-    manifest = {"docling": importlib.metadata.version("docling"), "models": records}
+    manifest = {"docling": docling_version(), "models": records}
     destination.mkdir(parents=True, exist_ok=True)
     from file_scan.pipeline import write_json
     if update_lock:

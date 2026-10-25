@@ -3,7 +3,7 @@
 import json
 from dataclasses import replace
 
-import httpx2
+import httpx
 import pytest
 from sqlalchemy import func, select
 
@@ -52,7 +52,7 @@ def mock_openai(monkeypatch, handler):
     original = embeddings.openai.OpenAI
 
     def client(**kwargs):
-        return original(**kwargs, http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+        return original(**kwargs, http_client=httpx.Client(transport=httpx.MockTransport(handler)))
     monkeypatch.setattr(embeddings.openai, "OpenAI", client)
 
 
@@ -62,7 +62,7 @@ def success(request):
     payload = json.loads(request.content)
     assert payload["model"].startswith("text-embedding-3-")
     assert payload["encoding_format"] == "float"
-    return httpx2.Response(200, json={
+    return httpx.Response(200, json={
         "object": "list", "model": payload["model"],
         "data": [{"index": index, "object": "embedding",
                   "embedding": [1.0] + [0.0] * (payload["dimensions"] - 1)}
@@ -100,7 +100,7 @@ def test_sdk_pgvector_idempotency_and_model_profile(configured, postgres_databas
 
 def test_authentication_failure_preserves_chunks_and_redacts_errors(configured, postgres_database, monkeypatch):
     def handle(request):
-        return httpx2.Response(401, json={"error": {"message": "sk-private-test-key secret content",
+        return httpx.Response(401, json={"error": {"message": "sk-private-test-key secret content",
                                                    "type": "invalid_request_error",
                                                    "code": "invalid_api_key"}})
     mock_openai(monkeypatch, handle)
@@ -122,7 +122,7 @@ def test_invalid_response_is_not_saved_and_retry_succeeds(configured, postgres_d
     def handle(request):
         if valid:
             return success(request)
-        return httpx2.Response(200, json={"object": "list", "model": "text-embedding-3-small",
+        return httpx.Response(200, json={"object": "list", "model": "text-embedding-3-small",
             "data": [{"index": 0, "object": "embedding", "embedding": [1, 0]}],
             "usage": {"prompt_tokens": 10, "total_tokens": 10}})
     mock_openai(monkeypatch, handle)
@@ -151,7 +151,7 @@ def test_completed_batches_survive_failure_and_resume(configured, postgres_datab
     def handle(request):
         calls.append(json.loads(request.content))
         if fail and len(calls) == 2:
-            return httpx2.Response(401, json={"error": {"message": "denied",
+            return httpx.Response(401, json={"error": {"message": "denied",
                 "type": "invalid_request_error", "code": "invalid_api_key"}})
         return success(request)
     mock_openai(monkeypatch, handle)

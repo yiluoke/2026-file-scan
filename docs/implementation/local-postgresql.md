@@ -1,4 +1,4 @@
-# ローカル検証用 PostgreSQL＋pgvector
+# ローカル検証用 PostgreSQL＋pgvector・PGroonga
 
 ローカル検証も PostgreSQL 18＋pgvector 0.8.6 を使用する。実際の本番の採用版が決まったら、ローカルのバージョンも合わせる。macOSではPostgres.app、Dockerを導入済みの環境ではComposeを利用できる。同じ5432番ポートを使うため、どちらか一方を起動する。
 
@@ -80,6 +80,10 @@ docker compose exec db psql -U file_scan -d file_scan_test -v ON_ERROR_STOP=1 -c
 
 `CREATE DATABASE`は未作成の場合だけ実行する。既存データを残して停止する場合は`docker compose down`を使う。ネイティブ版の`data/postgresql/`とComposeの名前付きボリュームは別の保存先になる。
 
+## PGroonga
+
+2026-10-25に、ネイティブのPostgreSQL 18.6とpgvector 0.8.6へPGroonga 4.1.0を追加した。新しいネイティブ環境では[PGroonga導入手順](pgroonga.md)で実行時ライブラリ・DBごとの拡張検索パスと有効化を設定してから、以下の全テストを実行する。既存ComposeイメージにはPGroongaを含めていない。
+
 ## アプリと実DBの検証
 
 接続設定をシェルへ読み込んでから実行する。
@@ -95,6 +99,6 @@ python scripts/test_postgres.py
 python -m ruff check src tests scripts
 ```
 
-`test_postgres.py`はテスト専用接続先を必須とし、PostgreSQL・pgvectorの版を表示してテストを実行する。テストでは一時表でベクトル保存・コサイン距離・HNSW索引の利用を確認し、取り込み契約テストは専用DB内のランダムなschemaを作成・削除する。SQLiteの単体テストも互換性確認用に残している。
+`test_postgres.py`はテスト専用接続先を必須とし、PostgreSQL・pgvector・PGroongaの導入を確認し、版を表示してテストを実行する。テストでは一時表でベクトル保存・コサイン距離・HNSW索引の利用を確認し、取り込み契約テストは専用DB内のランダムなschemaを作成・削除する。SQLiteの単体テストも互換性確認用に残している。
 
-OpenAI Embeddingの設定・生成・保存は[専用手順](openai-embedding.md)を参照。ベクトル検索API・PGroongaは現時点では未実装。
+OpenAI Embeddingの設定・生成・保存は[専用手順](openai-embedding.md)を参照。PGroongaの拡張導入と日本語索引の基本動作は確認済み。検索APIは未実装。

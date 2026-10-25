@@ -15,6 +15,8 @@
 ├── .env.example                    環境変数のひな型
 ├── compose.yaml                    DockerでDBを起動する場合の構成
 ├── pyproject.toml                  依存関係・CLI・テスト・静的検査の設定
+├── .python-version                 Python 3.14.4の指定
+├── requirements/                   Ubuntu標準版の対応表・制約・全依存の固定
 ├── src/file_scan/                  アプリ本体
 ├── tests/                          自動テストとテスト用設定生成
 ├── scripts/                        準備・DB初期設定・検証用コマンド
@@ -35,6 +37,11 @@
 | [.env.example](../../.env.example) | `.env`のひな型 | 実際のパスワード・APIキーを設定する前の説明と仮の値を記載する |
 | [compose.yaml](../../compose.yaml) | Docker利用時のPostgreSQL＋pgvector構成 | DBイメージ、ポート、永続ボリューム、初期化SQL、ヘルスチェックを定義する。Macへ直接導入したPostgres.appとは別の起動方法 |
 | [pyproject.toml](../../pyproject.toml) | Pythonプロジェクト共通設定 | 依存ライブラリ、`file-scan`コマンド、pytestの探索先、ruffの検査ルールを定義する |
+| [.python-version](../../.python-version) | Python管理ツール向けの版指定 | Ubuntu 26.04標準実体に合わせた3.14.4 |
+| [ubuntu-26.04-baseline.json](../../requirements/ubuntu-26.04-baseline.json) | Ubuntu公式の版との対応表 | 索引URL・ハッシュ、標準対応版、追加依存、互換例外の理由 |
+| [ubuntu-26.04-constraints.txt](../../requirements/ubuntu-26.04-constraints.txt) | 依存解決の制約 | Ubuntu標準対応版と5件の互換例外を指定 |
+| [ubuntu-26.04-tools.in](../../requirements/ubuntu-26.04-tools.in) | 構築用Pythonツール | pip 25.1.1とsetuptools 78.1.1 |
+| [ubuntu-26.04.lock](../../requirements/ubuntu-26.04.lock) | 間接依存を含めた固定一覧 | dev・search、OSごとのCPU用PyTorch等のmarkerも含む |
 | [.gitignore](../../.gitignore) | Git管理から除外するパスの定義 | 実設定、認証情報、原本、DB、生成物、仮想環境等を除外する |
 
 ### config.local.yamlの主な項目
@@ -163,6 +170,7 @@ status:  cli → config → db → 登録状況の表示
 | [test_postgres.py](../../tests/test_postgres.py) | 実PostgreSQL上のpgvector型、距離演算、HNSW索引の利用 |
 | [test_embeddings.py](../../tests/test_embeddings.py) | キー設定と秘匿、OpenAI SDKのHTTP要求、実pgvector保存、再利用、モデル変更、認証失敗、不正応答、入力上限、途中再開 |
 | [test_public_samples.py](../../tests/test_public_samples.py) | ダウンロード済み公開8ファイルのハッシュ、抽出、原本位置、除外、実DB登録、再取り込み、原本の非変更 |
+| [test_schema_sql.py](../../tests/test_schema_sql.py) | 配布用SQLと実装の一致、実PostgreSQLでの構造一致、取り込み、既存データ保護、途中失敗時の全体rollback |
 
 `test_postgres.py`はテストの中身で、`scripts/test_postgres.py`はテストを起動する補助コマンドである。
 
@@ -175,7 +183,11 @@ status:  cli → config → db → 登録状況の表示
 | [scripts/download_docling_models.py](../../scripts/download_docling_models.py) | 固定lockに従うモデル取得、明示更新、配置済み実体の整合性検証 |
 | [scripts/download_samples.py](../../scripts/download_samples.py) | 公開サンプルのダウンロード、ハッシュ・形式検査、仮想ファイルサーバーへの配置、除外確認用ファイルの作成 |
 | [scripts/init-postgres.sql](../../scripts/init-postgres.sql) | 開発用DBのvector拡張有効化、テスト専用DB作成、同DBの拡張有効化。Composeの新規ボリューム初期化時にも使用 |
+| [scripts/export_postgres_schema.py](../../scripts/export_postgres_schema.py) | 実装のDB定義から新規導入用SQLを生成し、`--check`で同梱SQLとの一致を検査する |
+| [sql/postgresql/schema-v3.sql](../../sql/postgresql/schema-v3.sql) | 別環境へ現行20テーブル・制約・12索引・pgvector・適用版を導入するSQL |
+| [sql/postgresql/README.md](../../sql/postgresql/README.md) | 導入手順、作成表の役割、アプリ側の初期値、SQLの再生成方法 |
 | [scripts/test_postgres.py](../../scripts/test_postgres.py) | テスト専用DBへの接続確認とpytest起動 |
+| [scripts/check_python_environment.py](../../scripts/check_python_environment.py) | Python実体と、そのOSで必要な全固定依存の版照合。今回のmacOS環境では97件を確認 |
 | [examples/public-samples.json](../../examples/public-samples.json) | 公開サンプル8件のURL、提供元、保存先、SHA-256を記録した取得一覧 |
 | [examples/input/ユーザー登録.md](../../examples/input/ユーザー登録.md) | 以前の最小動作確認に使用した架空のMarkdown文書。現在の標準収集先は仮想ファイルサーバー |
 | [examples/input/register_sample.py](../../examples/input/register_sample.py) | Pythonの構造抽出用の小さな架空ソース。同上 |
@@ -185,6 +197,9 @@ status:  cli → config → db → 登録状況の表示
 | ファイル | 役割 |
 | --- | --- |
 | [README.md](../../README.md) | プロジェクトの目的、導入、主要コマンド、実装範囲、資料への入口 |
+| [environment-setup.md](environment-setup.md) | 別環境のPython・必要ライブラリ、DB・テーブル、モデル、設定、取り込み確認、Windows・閉域環境の構築手順 |
+| [ubuntu-26.04-python.md](ubuntu-26.04-python.md) | Python 3.14.4への切替、Ubuntu標準対応版、5件の互換例外、全179テストの検証記録 |
+| [ubuntu-26.04-vm.md](ubuntu-26.04-vm.md) | 本番のWindowsホスト上Ubuntu 26.04 VMに合わせたPython・DB・SMBマウント・systemd起動・受入確認 |
 | [01-document-conversion.md](../design/01-document-conversion.md) | 収集、形式別抽出、原本対応、分割、品質管理等の設計 |
 | [02-search-platform.md](../design/02-search-platform.md) | pgvector・全文検索・検索API・権限制御等の設計。設計には未実装部分も含む |
 | [03-llm-chat.md](../design/03-llm-chat.md) | Dify、LLM回答、チャット画面、根拠提示等の設計案 |
@@ -229,7 +244,10 @@ DB・保管先はアプリが管理する成果物で、抽出結果を確認す
 
 | パス | 役割 |
 | --- | --- |
-| `.venv/` | プロジェクトのPython仮想環境と導入済みライブラリ、CLI、pipキャッシュ |
+| `.venv` / `.venv-ubuntu2604/` | 通常使うPython 3.14.4の独立仮想環境。現在は`.venv`から後者へのリンク |
+| `.venv-python312-backup-20261025/` | 変更前のPython 3.12環境の保管。通常実行には使用しない |
+| `artifacts/ubuntu2604/python/` | 現環境で使用するPython 3.14.4本体。仮想環境が参照するため保持する |
+| `artifacts/ubuntu2604/`のその他 | Ubuntu公式版の調査資料、検証ログ、版照合JSON、配布wheel、構築ツールとキャッシュ |
 | `src/file_scan.egg-info/` | Pythonパッケージ導入時に生成される依存関係・入口等のメタデータ |
 | `.pytest_cache/` | pytestの前回実行情報等 |
 | `.ruff_cache/` | ruffの検査キャッシュ |
@@ -249,4 +267,13 @@ DB・保管先はアプリが管理する成果物で、抽出結果を確認す
 - DB定義や移行を変える：`src/file_scan/db.py`。
 - OpenAI API呼出とベクトル保存を変える：`src/file_scan/embeddings.py`。
 
-最新の検証記録：[ingestion-improvements-validation.md](ingestion-improvements-validation.md)にv3・156テスト・公開8原本の結果を記載する。
+最新の検証記録：[ubuntu-26.04-python.md](ubuntu-26.04-python.md)にPython 3.14.4・179テスト・公開8原本の結果を記載する。改善適用時の記録は[ingestion-improvements-validation.md](ingestion-improvements-validation.md)。
+
+
+## 検索API
+
+- 実装：`src/search/`。取り込みv3のmetadataと分離した検索v1を管理する。
+- 操作：[検索APIの操作手順](search-api.md)。`file-search`から公開対象・採用版を明示管理する。
+- API：`/search-with-status`、Dify互換`/retrieval`、原本取得`/sources/{publication_id}`。
+- 動的な契約：実行中APIの`/openapi.json`。本文を含まない検索監視は`search_events`へ保存する。
+- 検証：`tests/test_search.py`。取り込みへの影響、公開・更新・出典、HTTP契約、予算、失敗・切断を検証する。

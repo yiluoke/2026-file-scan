@@ -10,6 +10,8 @@
 | 対象DB | 業務検索用PostgreSQL。pgvector・PGroongaの導入を前提とした案 |
 | 関連設計 | [文書変換](01-document-conversion.md)、[検索基盤](02-search-platform.md)、[LLM＋チャット](03-llm-chat.md) |
 
+2026-10-25の利用者指定により、検索の初回実装は文書ACL・SSOを保留した`local_prototype`とする。下記の権限対応テーブル・制約は将来の対応段階の仕様であり、初回の公開・リリース採用・検索監視の移行と分ける。`retrieval_events`は試作モードを`selection_summary`へ記録し、権限未適用時の`policy_revision`はNULLを許す。権限対応版の成功時に必須とする検証済みpolicy版を、試作で架空値に置き換えない。詳細は[検索API設計](02-search-platform.md)を参照。
+
 ## 1. 範囲と設計方針
 
 本資料を、業務検索用DBのテーブル、カラム、キー、制約、索引の正本とする。変換データの意味と識別子の生成規則は文書変換設計、検索APIの契約は検索基盤設計を参照する。
@@ -144,11 +146,13 @@ UQ：`(system_id, environment, release_name)`。本番コミットが不明な�
 | `provider` / `model_name` | text | 必須 | 実行先とモデル名。秘密情報は入れない |
 | `model_revision` | text | 必須 | 採用したモデルの版・識別情報 |
 | `dimensions` | integer | 必須 | ベクトル次元。正数 |
-| `distance_metric` | text | 必須 | `cosine / l2 / inner_product`の候補から採用時に決定 |
+| `distance_metric` | text | 必須 | 初期検索は`cosine`。`l2 / inner_product`等への変更時は検索設定・評価を更新 |
 | `preprocessing` | jsonb | 必須 | 正規化等の設定。初期値`{}` |
 | `profile_status` | text | 必須 | `building / usable / retired` |
 
 UQ：`(embedding_profile_id, dimensions)`を複合FK用に設ける。既存プロファイルのモデルや次元を変更せず、別プロファイルとして登録する。外部モデルの版を固定できない場合の運用は未決事項とする。
+
+検索初版は[検索API設計10.1](02-search-platform.md#101-現行実装を引き継ぎ未決から外す事項)に従い、実装済みの`provider / model / dimensions / input_version`と既存のプロファイルIDを維持する。上表の追加列は将来拡張案とし、初回検索の必須移行にはしない。cosine距離は初期の検索設定へ固定し、`model`を`model_name`へ改名するためだけの移行・ID再生成は行わない。公開先プロファイルの選択・FK制約は別途導入し、取得できない固定モデル版を架空値で埋めない。
 
 ### 5.3 `knowledge_bases`：検索範囲
 
@@ -446,9 +450,9 @@ UQ：`(job_key, attempt_no)`。`queued / running`の行に対する`job_key`の�
 | `duration_ms` | bigint | 必須 | 0以上の処理時間 |
 | `error_code` | text | 任意 | 失敗区分 |
 
-`success / no_results`では`knowledge_id`、`release_id`、`snapshot_id`、台帳・接続許可の版を必須とする。認証前の拒否や範囲の解決失敗では、未確定の参照列・版をNULL、`coverage_state`を`unknown`、件数と採用情報を`{}`として記録する。実在しない原本・範囲をログのために台帳へ作らない。
+権限対応版の`success / no_results`では`knowledge_id`、`release_id`、`snapshot_id`、台帳・接続許可の版を必須とする。初回の`local_prototype`では接続許可の版はNULLを許し、`selection_summary`へモードと権限未適用を記録する。認証前の拒否や範囲の解決失敗では、未確定の参照列・版をNULL、`coverage_state`を`unknown`、件数と採用情報を`{}`として記録する。実在しない原本・範囲をログのために台帳へ作らない。
 
-質問・根拠本文・画像・APIキーを初期設定で保存しない。`snapshot_id`はその検索の整合した読み取りを識別するIDであり、後日同じDB状態を再現できる永続スナップショットではない。結果数と不足情報は認可範囲内だけを記録する。監視不能時の回答継続方針と保存期間は未決事項とする。
+質問・根拠本文・画像・APIキーを初期設定で保存しない。`snapshot_id`はその検索の整合した読み取りを識別するIDであり、後日同じDB状態を再現できる永続スナップショットではない。結果数と不足情報は認可範囲内だけを記録する。監視保存失敗時のPoCの継続方針は検索API設計8章に従う。本番の監査要件と保存期間は未決事項とする。
 
 ### 5.21 `selected_generations`：v3の下書き選択
 
@@ -553,6 +557,8 @@ Embeddingプロファイルの変更は、対象範囲の必要ベクトルを�
 
 ### 8.2 coverageとsnapshot
 
+APIの状態フィールド、coverageの集計範囲、エラーへの対応は[検索API設計6章](02-search-platform.md#6-検索apiの契約)を正本とする。追加の機能・由来フィルターで予定原本の集計範囲を狭めず、認可済みナレッジ・解決版全体を対象とする。件数の理由別内訳は`retrieval_events.coverage_counts`へ、検索設定版・スコア版は`selection_summary`へ記録する。
+
 `knowledge_bases.scan_status`、`knowledge_documents`、対象リリースの`document_release_bindings`、索引準備状態から不足を算出する。成功した世代の件数だけでは集計しない。対象原本にリリース対応行がない場合も除外せず、版の対応が未確定である`unknown`として扱う。
 
 | 状態 | 判定案 |
@@ -598,3 +604,27 @@ PoCは検索結果キャッシュを必須にしない。将来導入する場�
 - [PostgreSQL：トランザクション分離](https://www.postgresql.org/docs/current/transaction-iso.html)
 - [pgvector：型・索引・異なる次元の扱い](https://github.com/pgvector/pgvector)
 - [PGroonga：索引の作成](https://pgroonga.github.io/reference/create-index-using-pgroonga.html)
+
+
+## 12. ローカル試作で実装した検索専用スキーマv1
+
+取り込みv3への影響を抑えるため、公開対象のコピー・採用ポインター・検索監視を別のmetadataと版で追加した。取り込み用の制約やテーブルは変更しない。`file-search init-db`は既存の取り込みv3とvector／PGroongaの存在を確認し、検索専用表だけを作成する。再実行時は版・表の欠落を確認し、未知版や未管理の同名表を自動修復しない。
+
+| テーブル | 主な列・キー・参照 |
+| --- | --- |
+| `search_schema_migrations` | `version integer PK`。初版は1。取り込みの`schema_migrations`とは分離 |
+| `search_releases` | `release_id text PK`、`knowledge_id FK→knowledge_bases`、`name text`、`created_at`。UQ `(knowledge_id,name)` |
+| `search_catalogs` | `knowledge_id PK/FK→knowledge_bases`、`default_release_id FK→search_releases`、`embedding_profile_id FK→embedding_profiles`、`revision bigint`、`enabled boolean`、`feature_filter_enabled boolean` |
+| `search_release_bindings` | PK `(release_id,document_id)`、各FK→検索リリース／原本。要求する`expected_source_version / expected_conversion_revision`と、採用した`publication_id`。公開先・原本・リリースへの複合FKで別原本・別版の混入を防ぐ |
+| `search_publications` | `publication_id text PK`、`release_id / document_id`、`generation_id`、`source_version / source_path / conversion_revision`、`embedding_profile_id`、`generation_updated_at`、`approved_by / approved_at`、`partial boolean`、`quality_summary / relations jsonb`。元世代・原本の複合FKと公開先の複合UQを持つ |
+| `search_chunks` | PK `(publication_id,chunk_id)`、公開先FK。原文`content_text`、検索入力`search_text`、`title`、`identifiers / feature_ids text[]`、`mappings / quality_flags jsonb`、`embedding vector`（未生成はNULL）、`dimensions integer`、`input_hash text`。ベクトルの実次元をCHECK |
+| `search_blocks` | PK `(publication_id,block_id)`、公開先FK。`parent_id / reading_order / element_type`、`content_text`、必要な`content_data / section_path / source_locations / quality_flags / assets jsonb`。セルはヘッダー元を追う座標を保持し、不要な解析用JSON全体は検索側へ複製しない |
+| `search_events` | `request_id text PK`、`created_at`、任意の`knowledge_id / release_id / snapshot_id`、`result_status`、`duration_ms`、`summary jsonb`、`error_code`。本文・質問・キー・生SQLは保存しない |
+
+公開IDはリリース・原本・世代・実際のコピー内容と元世代更新時刻から生成する。公開行の本文を管理コマンドでUPDATEせず、新しいコピーを作って採用ポインターだけを切り替える。元の取り込み世代・ブロック・チャンクはdraftを維持する。`published`は初版では承認済み検索コピーの状態を指す。
+
+`search_chunks.search_text`にはPGroonga（TokenBigram＋NormalizerAuto）、識別子・機能配列にはGINを追加する。ベクトルはcosine正確検索を用い、HNSWは追加していない。
+
+現行検索では要求版・採用コピーと、現在の収集状態・原本ハッシュ・選択世代・変換版・元世代更新時刻を照合する。不一致は不足として通知する。履歴は起動時の明示許可と対象版を必要とし、古いコピーを再利用する場合も現在の削除・利用不能・所属除外を適用する。ACLは未適用として明示する。
+
+物理定義の実装は[search/schema.py](../../src/search/schema.py)、登録・再公開と検証は[検索APIの操作手順](../implementation/search-api.md)を参照。上記以前の業務公開・ACL表は今後の統合設計であり、検索v1と両方の公開フラグを同時に更新する方式にはしない。

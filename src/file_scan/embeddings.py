@@ -8,7 +8,7 @@ from uuid import uuid4
 
 import openai
 from sqlalchemy import exists, func, select, tuple_
-from sqlalchemy.dialects.postgresql import distinct_on, insert
+from sqlalchemy.dialects.postgresql import insert
 
 from file_scan.config import Settings, validate_settings
 from file_scan.db import tables
@@ -91,7 +91,7 @@ def _cached_vectors(connection, profile_id, hashes):
     if missing:
         rows = connection.execute(select(embeddings).where(
             embeddings.c.embedding_profile_id == profile_id, embeddings.c.input_hash.in_(missing)
-        ).ext(distinct_on(embeddings.c.input_hash)).order_by(embeddings.c.input_hash,
+        ).distinct(embeddings.c.input_hash).order_by(embeddings.c.input_hash,
             embeddings.c.generation_id, embeddings.c.chunk_id)).mappings()
         result.update({row["input_hash"]: dict(row) for row in rows})
     return result

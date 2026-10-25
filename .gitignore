@@ -11,7 +11,8 @@
 /config.local.yaml
 
 # Python local environment and caches
-.venv/
+.venv
+.venv-*/
 __pycache__/
 *.py[cod]
 .pytest_cache/

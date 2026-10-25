@@ -18,12 +18,13 @@
 
 ## 2. 導入と設定
 
-Python 3.12以上で、リポジトリのルートから実行する。以下はmacOS／Linuxの例である。
+Python 3.14系で、リポジトリのルートから実行する。以下はmacOS／Linuxの例である。
 
 ```sh
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[dev]'
+python -m pip install -r requirements/ubuntu-26.04.lock
+python -m pip install --no-deps --no-build-isolation -e '.[dev,search]'
 cp config.example.yaml config.local.yaml
 ```
 

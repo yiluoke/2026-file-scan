@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 from functools import lru_cache
 from pathlib import Path
 
 LOCK_PATH = Path(__file__).with_name("docling-models.lock.json")
+
+
+def docling_version() -> str:
+    """公式slim配布でもモデルの取得・検査に同じDocling版を記録する。"""
+    for name in ("docling-slim", "docling"):
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    raise importlib.metadata.PackageNotFoundError("docling-slim")
 
 
 class ModelIntegrityError(RuntimeError):
