@@ -19,8 +19,9 @@ from file_scan.db import tables as core
 from search import schema as s
 from search.config import async_database
 from search.errors import SearchError
-from search.models import SearchRequest, SearchResponse, RetrievalResponse
+from search.models import SearchInput, SearchRequest, SearchResponse, RetrievalResponse
 from search.service import RetrievalService
+from search.stub import fixed_response
 from file_scan.storage import _open_no_follow
 
 logger = logging.getLogger(__name__)
@@ -90,15 +91,20 @@ class RequestBoundary:
 
 
 def create_app(config, *, engine=None, embedder=None, allow_history=False):
-    engine = engine or async_database(config.ingestion.database_url)
-    service = RetrievalService(engine, config, embedder=embedder, allow_history=allow_history)
+    request_model = SearchInput if config.test_mode else SearchRequest
+    if config.test_mode:
+        engine, service = None, None
+    else:
+        engine = engine or async_database(config.ingestion.database_url)
+        service = RetrievalService(engine, config, embedder=embedder, allow_history=allow_history)
 
     @asynccontextmanager
     async def lifespan(app):
         try:
             yield
         finally:
-            await engine.dispose()
+            if engine is not None:
+                await engine.dispose()
 
     app = FastAPI(title="File Scan Search API", version="1", lifespan=lifespan)
     app.add_middleware(RequestBoundary, config=config)
@@ -124,6 +130,13 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
 
     @app.get("/healthz")
     async def health(request: Request):
+        if config.test_mode:
+            return {
+                "status": "ok",
+                "execution_mode": "test",
+                "access_control": "not_enforced",
+                "database": "not_used",
+            }
         try:
             async with asyncio.timeout(2), engine.connect() as c:
                 if (await c.execute(select(s.versions.c.version))).scalar_one() != 1:
@@ -151,6 +164,9 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
             raise SearchError("SEARCH_UNAVAILABLE", retryable=True) from None
 
     async def run_search(payload, request, *, standard=False):
+        if config.test_mode:
+            return fixed_response(request.state.request_id, config.config_version)
+
         # ASGIの切断通知と検索処理を競合させ、切断時もDB待機・外部要求を取り消す。
         async def disconnected():
             while True:
@@ -182,7 +198,7 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
         response_model=SearchResponse,
         dependencies=[Security(HTTPBearer(auto_error=False))],
     )
-    async def search(payload: SearchRequest, request: Request):
+    async def search(payload: request_model, request: Request):
         return await run_search(payload, request)
 
     @app.post(
@@ -190,12 +206,14 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
         response_model=RetrievalResponse,
         dependencies=[Security(HTTPBearer(auto_error=False))],
     )
-    async def retrieval(payload: SearchRequest, request: Request):
+    async def retrieval(payload: request_model, request: Request):
         result = await run_search(payload, request, standard=True)
         return {"records": result["records"]}
 
     @app.get("/sources/{publication_id}", dependencies=[Security(HTTPBearer(auto_error=False))])
     async def source(publication_id: str, request: Request):
+        if config.test_mode:
+            raise SearchError("SCOPE_NOT_FOUND")
         try:
             async with engine.connect() as c:
                 catalog = await service.scope(

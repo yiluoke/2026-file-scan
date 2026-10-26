@@ -105,6 +105,32 @@ curl --fail-with-body http://127.0.0.1:8000/search-with-status \
 - 返却は最大20レコード、各2000トークン・合計6000トークン、JSON全体256 KiB。文脈も件数へ含める。引用を切り出した場合は原文字範囲を保持し、正確な位置へ狭められないPDFのbbox・Excelのセル範囲はブロック粒度と明示する。
 - 表を予算内に追跡可能な形で返せない場合は、そのレコードを落として次候補を試す。本文を生成要約へ置換しない。
 
+## DBを使わないAPIテストモード
+
+設定ファイルへ次を追加し、APIを再起動するとテストモードになる。`false`または未指定の場合は通常検索を行う。設定は起動時に読み込み、HTTPリクエストからモードを切り替えることはできない。
+
+```yaml
+search:
+  test_mode: true
+```
+
+接続試験だけなら、収集元やDB設定を含まない同梱の[テスト用設定](../../config.search-test.example.yaml)で起動できる。接続キーは通常モードと同じく必要。
+
+```sh
+export FILE_SCAN_SEARCH_API_KEY='<検索APIの接続用キー>'
+file-search serve --config config.search-test.example.yaml --port 8000
+```
+
+`POST /search-with-status`と`POST /retrieval`は、通常と同じJSON要求を受け、`records`に次の固定文言を1件返す。質問・絞り込み条件によって文言は変わらない。
+
+> これは検索APIのテスト応答です。DB検索は実行していません。
+
+レコードの`metadata.test_mode`は`true`。状態付き応答は`execution_mode: test`、`coverage_state: unknown`とし、DBを確認していない版・プロファイル・件数は`null`にする。`/retrieval`も接続確認用の固定応答として200を返し、通常検索のcoverage判定は行わない。
+
+DBエンジン・検索サービスを生成せず、SQL・監視イベントの書き込み・質問Embedding・トークナイザーの取得を行わない。`GET /healthz`もDBへ接続せず`execution_mode: test`と`database: not_used`を返し、`GET /sources/{publication_id}`は404となる。
+
+Bearer接続認証、JSON形式・項目・文字数・32 KiBの本文上限は引き続き検査する。テストモードではトークン計数は行わず、通常モードでは追加で2048トークン上限を検査する。切り替え対象は`serve`で提供するAPIであり、`init-db`や`publish`等の管理コマンドは従来どおりDBを使う。
+
 ## Difyへの接続
 
 Difyの配備は別作業で、検索API単独の実装・検証は完了している。
@@ -125,6 +151,8 @@ Python 3.14.4・PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0で全179テス
 最終結果は`artifacts/reports/search-regression-python314.log`、実サーバーの確認結果は`artifacts/reports/search-api-smoke.json`へ保存した。
 
 検索を`src/search/`へ移した後も全179テストと実サーバー起動確認が成功した。配布wheelに`file_scan/`と`search/`が並列で含まれ、旧配置が残らず、`file-search`の起動先が`search.cli:main`であることも確認した。旧配置でのビルド履歴がある環境では、`build/lib/file_scan/search/`の生成済みキャッシュを除去して再ビルドする。
+
+テストモード追加後は、DB・検索サービス・トークナイザーを使うと失敗する条件で19テストが成功し、既存処理を含む全198テストも成功した（既存の非推奨警告5件）。停止中の開発DBには触れず、別ポートの検証用PostgreSQLで回帰試験を行い、検証後に停止・削除した。全体の結果は`artifacts/reports/search-test-mode-regression-python314.log`へ保存した。DB接続先を利用不能にし、OpenAIキーを設定しない実HTTP試験でも、両APIの固定文言・認証を確認し、`artifacts/search-test-mode/http-result.json`へ保存した。
 
 実DB検証はテスト専用DB内の一時schemaに閉じ込め、模擬ベクトルを開発DBへ入れない。実OpenAI APIへの接続・課金、Dify本体でのChatflow実行、日本語検索品質・性能は今回の実装試験には含めない。
 

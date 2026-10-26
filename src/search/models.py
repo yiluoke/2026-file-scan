@@ -69,7 +69,9 @@ class MetadataCondition(InputModel):
         return self
 
 
-class SearchRequest(InputModel):
+class SearchInput(InputModel):
+    """テストモードでも検査する、外部リソース不要の入力形式。"""
+
     knowledge_id: StrictStr = Field(min_length=1, max_length=128)
     query: StrictStr = Field(min_length=1, max_length=4000)
     retrieval_setting: RetrievalSetting
@@ -82,19 +84,21 @@ class SearchRequest(InputModel):
             raise ValueError("invalid text")
         return value
 
-    @field_validator("query")
-    @classmethod
-    def token_budget(cls, value):
-        if count_tokens(value) > 2048:
-            raise ValueError("query token limit")
-        return value
-
     def filters(self):
         return (
             {c.name: c.value for c in self.metadata_condition.conditions}
             if self.metadata_condition
             else {}
         )
+
+
+class SearchRequest(SearchInput):
+    @field_validator("query")
+    @classmethod
+    def token_budget(cls, value):
+        if count_tokens(value) > 2048:
+            raise ValueError("query token limit")
+        return value
 
 
 class EvidenceRecord(BaseModel):
@@ -105,17 +109,17 @@ class EvidenceRecord(BaseModel):
 
 
 class RetrievalStatus(BaseModel):
-    snapshot_id: str
+    snapshot_id: str | None
     search_mode: Literal["current", "history"]
-    resolved_release_id: str
-    catalog_revision: int
-    publication_revision: int
+    resolved_release_id: str | None
+    catalog_revision: int | None
+    publication_revision: int | None
     policy_revision: int | None
     access_control: Literal["not_enforced"]
-    execution_mode: Literal["local_prototype"]
-    embedding_profile_id: str
+    execution_mode: Literal["local_prototype", "test"]
+    embedding_profile_id: str | None
     search_config_version: str
-    coverage_scope: Literal["configured_knowledge_release"]
+    coverage_scope: Literal["configured_knowledge_release", "test"]
     coverage_state: Literal["complete", "incomplete", "unknown"]
     pending_updates: int | None
     failed_documents: int | None

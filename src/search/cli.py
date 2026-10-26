@@ -38,7 +38,6 @@ def main(argv=None):
     args = parser().parse_args(argv)
     engine = None
     try:
-        settings = load_config(args.config)
         if args.command == "serve":
             import uvicorn
             from search.api import create_app
@@ -49,6 +48,7 @@ def main(argv=None):
             app = create_app(load_search_settings(args.config), allow_history=args.allow_history)
             uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)
             return 0
+        settings = load_config(args.config)
         engine = open_database(settings.database_url)
         if args.command == "init-db":
             schema.migrate(engine)

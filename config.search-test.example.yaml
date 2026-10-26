@@ -1,0 +1,4 @@
+# DB未起動でも検索APIへのHTTP接続とJSON応答を確認できます。
+# 接続キーFILE_SCAN_SEARCH_API_KEYは環境変数で別途設定します。
+search:
+  test_mode: true

@@ -4,6 +4,10 @@ knowledge_id: demo
 system_id: demo-system
 environment: sample
 
+# 検索APIの接続試験。trueではDB・Embeddingを使わず固定文言を返します。
+search:
+  test_mode: false
+
 # ローカル検証もPostgreSQL＋pgvectorを使います。
 # FILE_SCAN_DATABASE_URLを設定すると、以下の値より環境変数が優先されます。
 database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan

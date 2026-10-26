@@ -139,6 +139,8 @@ file-search create-release --config config.local.yaml --release <対象業務版
 
 検索表は取り込みv3と別の版で追加する。既存のdraft・世代選択・キャッシュは維持し、既存資料を自動公開しない。開発DBには検索表のみを追加済み。
 
+DBを使わずAPI接続を試す場合は、`search.test_mode: true`を設定して起動する。[テスト用設定](config.search-test.example.yaml)と[起動・応答の説明](docs/implementation/search-api.md#dbを使わないapiテストモード)を参照。固定のテスト文言を返し、DB検索・Embeddingは実行しない。
+
 ## 設計資料
 
 | 機能 | 資料 | 設計レベル |
