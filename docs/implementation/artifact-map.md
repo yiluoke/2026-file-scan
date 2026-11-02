@@ -128,7 +128,7 @@ python scripts/test_postgres.py
 | [config.py](../../src/file_scan/config.py) | YAML・環境変数から`Settings`、`Source`、`EmbeddingSettings`を組み立てる。相対パス、除外設定、対象範囲、型、重複、自己取り込み等を検証する |
 | [collector.py](../../src/file_scan/collector.py) | 収集元を再帰的に列挙する。対象拡張子・除外条件・リンク等を判定し、安定した文書IDと原本URIを付ける。列挙エラーと空フォルダを区別する |
 | [storage.py](../../src/file_scan/storage.py) | 原本を安全にコピーする。コピー前後の変更を検出し、内容ハッシュで原本・画像を保管する。既存の保管物の欠落・改変も確認する |
-| [parsers.py](../../src/file_scan/parsers.py) | ファイル形式別の抽出器。テキスト、Markdown、Python、Word、Excel、PDFを共通のブロックへ変換し、行・セル・ページ等の原本位置を保持する。Python原本は実行しない |
+| [parsers.py](../../src/file_scan/parsers.py) | ファイル形式別の抽出器。TXT、Markdown、Word、Excel、PDFを共通のブロックへ変換し、行・セル・ページ等の原本位置を保持する。プログラム・設定・ログ形式は対象外 |
 | [domain.py](../../src/file_scan/domain.py) | 抽出・分割・登録で使う共通データ型。`Block`、`ExtractionResult`、`ExtractedAsset`、`Relation`、`Chunk`、`ChunkBlock`を定義する |
 | [chunking.py](../../src/file_scan/chunking.py) | 抽出ブロックを検索用チャンクへ分割・結合する。文書・節の文脈と原本の文字範囲の対応を保持する |
 | [db.py](../../src/file_scan/db.py) | SQLAlchemyによるテーブル・FK・制約・索引、DB接続、スキーマ初期化を定義する。v1/v2からv3へ選択世代・キャッシュ等を非破壊で追加する |
@@ -190,7 +190,6 @@ status:  cli → config → db → 登録状況の表示
 | [scripts/check_python_environment.py](../../scripts/check_python_environment.py) | Python実体と、そのOSで必要な全固定依存の版照合。今回のmacOS環境では97件を確認 |
 | [examples/public-samples.json](../../examples/public-samples.json) | 公開サンプル8件のURL、提供元、保存先、SHA-256を記録した取得一覧 |
 | [examples/input/ユーザー登録.md](../../examples/input/ユーザー登録.md) | 以前の最小動作確認に使用した架空のMarkdown文書。現在の標準収集先は仮想ファイルサーバー |
-| [examples/input/register_sample.py](../../examples/input/register_sample.py) | Pythonの構造抽出用の小さな架空ソース。同上 |
 
 ## 7. 設計資料と操作説明
 

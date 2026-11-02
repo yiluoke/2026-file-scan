@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="136" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 136" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="136"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-136)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0.0" y="16" width="234.63" height="105" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0.0" y="117" width="234.63" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13.0" y="96" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,192) scale(1,-1)">原本：manual.docx</text>
+			<text x="13.0" y="74" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,148) scale(1,-1)">見出し：ユーザー登録</text>
+			<text x="13.0" y="57" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,114) scale(1,-1)">段落：IDは必須です。</text>
+			<text x="13.0" y="40" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,80) scale(1,-1)">表：項目 / 制約</text>
+			<path d="M 237.63,68 L 258.63,68 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="258.63 68, 252.63 71, 252.63 65" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="261.63" y="16" width="234.63" height="105" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="261.63" y="117" width="234.63" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="274.63" y="96" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,192) scale(1,-1)">OOXML → ブロック</text>
+			<text x="274.63" y="74" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,148) scale(1,-1)">heading → paragraph → table</text>
+			<text x="274.63" y="57" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,114) scale(1,-1)">目次は本文への案内として保持</text>
+			<text x="274.63" y="40" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,80) scale(1,-1)">位置：段落番号・表番号</text>
+			<path d="M 499.26,68 L 520.26,68 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="520.26 68, 514.26 71, 514.26 65" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="523.26" y="16" width="234.63" height="105" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="523.26" y="117" width="234.63" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="536.26" y="96" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,192) scale(1,-1)">search_text → ベクトル</text>
+			<text x="536.26" y="74" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,148) scale(1,-1)">manual.docx / ユーザー登録</text>
+			<text x="536.26" y="57" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,114) scale(1,-1)">IDは必須です。</text>
+			<text x="536.26" y="40" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,80) scale(1,-1)">表本文は別のチャンクへ</text>
+		</g>
+	</g>
+</svg>

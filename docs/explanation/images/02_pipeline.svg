@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="150" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 150" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="150"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-150)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="27" width="120" height="92" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="115" width="120" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="94" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,188) scale(1,-1)">原本</text>
+			<text x="13" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">指定フォルダ</text>
+			<text x="13" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">原本コピー</text>
+			<rect x="150" y="27" width="210" height="92" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="150" y="115" width="210" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="163" y="94" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,188) scale(1,-1)">ingest：ローカル処理</text>
+			<text x="163" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">解析 → ブロック → チャンク</text>
+			<text x="163" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">DBへdraft登録</text>
+			<rect x="390" y="27" width="205" height="92" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="390" y="115" width="205" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="403" y="94" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,188) scale(1,-1)">embed：外部API</text>
+			<text x="403" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">search_text → OpenAI</text>
+			<text x="403" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">戻ったベクトルを検査</text>
+			<rect x="625" y="27" width="132.89" height="92" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="625" y="115" width="132.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="638" y="94" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,188) scale(1,-1)">PostgreSQL</text>
+			<text x="638" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">pgvector保存</text>
+			<text x="638" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">検索公開は別途</text>
+			<path d="M 123,72 L 147,72 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="147 72, 141 75, 141 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<path d="M 363,72 L 387,72 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="387 72, 381 75, 381 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<path d="M 598,72 L 622,72 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="622 72, 616 75, 616 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="391" y="9" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,18) scale(1,-1)">外部へ送るもの：抽出済みの検索用テキスト</text>
+		</g>
+	</g>
+</svg>

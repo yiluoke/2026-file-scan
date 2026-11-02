@@ -16,9 +16,9 @@ class ConfigError(ValueError):
 
 
 DEFAULT_EXTENSIONS = (
-    ".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md", ".py",
-    ".sql", ".json", ".yaml", ".yml", ".csv", ".log",
+    ".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md",
 )
+SUPPORTED_EXTENSIONS = frozenset((*DEFAULT_EXTENSIONS, ".markdown"))
 DEFAULT_DATABASE_URL = "postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan"
 
 
@@ -141,6 +141,9 @@ def _database_url(value: str, base: Path) -> str:
 
 def validate_settings(settings: Settings) -> None:
     """直接生成されたSettingsでも、危険な収集範囲を実行前に拒否する。"""
+    if any(not isinstance(extension, str) or extension.lower() not in SUPPORTED_EXTENSIONS
+           for extension in settings.include_extensions):
+        raise ConfigError("include_extensionsには文書形式（.docx / .xlsx / .xlsm / .pdf / .txt / .md / .markdown）のみ指定できます")
     _integer(settings.chunk_max_characters, "chunk_max_characters", 100)
     if _integer(settings.chunk_max_tokens, "chunk_max_tokens", 32) > 8191:
         raise ConfigError("chunk_max_tokensは8191以下にしてください")

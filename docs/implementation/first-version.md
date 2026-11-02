@@ -32,7 +32,7 @@ Windows PowerShellでは有効化コマンドを`.venv\Scripts\Activate.ps1`に�
 
 [`config.example.yaml`](../../config.example.yaml)と[`config.postgresql.example.yaml`](../../config.postgresql.example.yaml)は、どちらもローカルPostgreSQL＋pgvector用である。[ローカルDBの導入手順](local-postgresql.md)に従って先にDBを起動する。実際の収集先と接続情報を含む設定は、Git対象外の`config.local.yaml`等で管理する。
 
-標準設定例は、`python scripts/download_samples.py`で公開サンプルを配置する`data/file-server/department/`を仮想ファイルサーバーとして使う。DBはローカルPostgreSQLの`file_scan`、実体は`artifacts/storage`、確認ファイルは`artifacts/reports`に作る。SQL・JSON・YAML・YML・CSV・LOGも収集する場合は、設定例の`include_extensions`に追加する。
+標準設定例は、`python scripts/download_samples.py`で公開サンプルを配置する`data/file-server/department/`を仮想ファイルサーバーとして使う。DBはローカルPostgreSQLの`file_scan`、実体は`artifacts/storage`、確認ファイルは`artifacts/reports`に作る。取込対象はDOCX・XLSX・XLSM・PDF・TXT・Markdownに限定し、プログラム・SQL・JSON・YAML・YML・CSV・LOGは対象にしない。対象外の拡張子を`include_extensions`に追加した設定はエラーになる。
 
 | 設定 | 意味と初期値 |
 | --- | --- |
@@ -143,8 +143,6 @@ DBの抽出本文、レポート、確認用Markdownも社内情報を含む。�
 | 形式 | 抽出内容・原本位置 | 主な制限 |
 | --- | --- | --- |
 | TXT・MD | UTF-8／CP932、段落、MDの見出し、行位置 | 対応文字コードとして読めなければ停止。NUL入りデータは拒否 |
-| SQL・JSON・YAML・YML・CSV・LOG | テキストと行位置 | 構文の評価、SQL実行、CSVの表構造解析は行わない |
-| PY | ASTのトップレベル関数・クラス、その前後のコード、行位置 | 実行しない。構文不正時は原文と警告を保持 |
 | XLSX・XLSM | 全シート棚卸し、行・セル、結合、見出し候補、数式、保存済み結果、画像アンカー | 完全な表示形式・任意帳票の意味解析は行わない。複雑な数式、図形・グラフ、VBA等は警告 |
 | DOCX | OOXMLの本文順、見出し・継承、表、目次リンクと本文の対応、画像、段落・表位置 | 表示ページ・浮動図形のレイアウト再現は行わない。自動番号、変更履歴、未対応の補助本文等を警告 |
 | PDF Docling（標準） | 実モデルのレイアウト・読み順・本文・表構造・bbox、図の領域画像 | CPU固定・OCRなし。モデル事前配置が必要。画像の意味解析は後続 |
@@ -222,6 +220,6 @@ python -m ruff check src tests scripts
 
 `FILE_SCAN_TEST_DATABASE_URL`にテスト専用DBを指定する。補助スクリプトはインストール済みPostgreSQLとpgvectorを確認し、ベクトル演算・HNSW索引と既存のテストを実行する。取り込みテストはランダムなschemaを作成・削除するため、本番接続先は使わない。pgserverによる一時PostgreSQLの起動は行わない。通常の`python -m pytest`では、テスト用接続先が未指定なら実接続テストをスキップする。
 
-テストは小さな原本を生成し、複数シート、数式と保存済み結果、Wordの順序・目次・画像、Pythonを実行しないこと、画像PDFを成功扱いしないこと、再実行、DBの制約等を検証する。公開8原本・実Doclingモデル・実PostgreSQLは自動検証する。社内実ファイル、Windows実機、実ファイルサーバー、本物のOpenAI APIキーによる品質・料金の受入検証は別途行う。
+テストは小さな原本を生成し、複数シート、数式と保存済み結果、Wordの順序・目次・画像、プログラム・設定・ログ形式を取り込まないこと、画像PDFを成功扱いしないこと、再実行、DBの制約等を検証する。公開8原本・実Doclingモデル・実PostgreSQLは自動検証する。社内実ファイル、Windows実機、実ファイルサーバー、本物のOpenAI APIキーによる品質・料金の受入検証は別途行う。
 
 原本、抽出本文、画像、ログ、確認用ファイル、ローカルDB、接続情報はGitへ登録しない。`.gitignore`で`data/`、`artifacts/`、`logs/`、`var/`、`config.local.yaml`、`.env`等を除外する。任意の別パスをリポジトリ内へ追加する場合は、そのパスも除外する。

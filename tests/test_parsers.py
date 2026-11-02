@@ -63,54 +63,15 @@ def test_empty_or_binary_text_is_not_reported_as_success(tmp_path: Path):
         parse_file(source, "xls")
 
 
-@pytest.mark.parametrize("file_format", ["sql", "json", "yaml", "yml", "csv", "log"])
-def test_configuration_and_log_formats_are_kept_as_plain_text(tmp_path: Path, file_format: str):
+@pytest.mark.parametrize("file_format", ["py", "python", "sql", "json", "yaml", "yml", "csv", "log"])
+def test_program_and_data_formats_are_rejected_without_reading_content(tmp_path, file_format, monkeypatch):
     source = tmp_path / f"source.{file_format}"
-    # 構文として不正でも、軽量経路は解釈や実行をせず原文を保持する。
-    content = "# 見出しとして解釈しない\n未解析の値: [\n\n次の記録\n"
-    source.write_text(content, encoding="utf-8")
-    result = parse_file(source, f".{file_format.upper()}")
-    assert texts(result) == ["# 見出しとして解釈しない\n未解析の値: [\n", "次の記録\n"]
-    assert all(block.element_type == "paragraph" for block in result.blocks)
-    assert all(block.source_locations[0]["format"] == file_format for block in result.blocks)
-    assert result.blocks[-1].source_locations[0]["start_line"] == 4
-    assert result.processing_status == "succeeded"
-
-
-def test_cp932_log_keeps_encoding_and_original_format(tmp_path: Path):
-    source = tmp_path / "server.log"
-    source.write_bytes("障害 E001\r\n復旧済み\r\n".encode("cp932"))
-    result = parse_file(source, "log")
-    assert result.metrics["encoding"] == "cp932"
-    assert texts(result) == ["障害 E001\r\n復旧済み\r\n"]
-    assert result.blocks[0].source_locations[0] == {"format": "log", "start_line": 1, "end_line": 2}
-
-
-def test_python_extracts_decorated_functions_without_executing_source(tmp_path: Path):
-    marker = tmp_path / "must-not-exist.txt"
-    source = tmp_path / "unsafe.py"
-    source.write_text(
-        f"from pathlib import Path\nPath({str(marker)!r}).write_text('executed')\n\n"
-        "@decorator\ndef calculate(value):\n    return value + 1\n\n"
-        "class Example:\n    def method(self):\n        return 1\n",
-        encoding="utf-8",
-    )
-    result = parse_file(source, "py")
-    assert not marker.exists()
-    function = next(b for b in result.blocks if b.content_data.get("symbol_name") == "calculate")
-    assert function.content_text.startswith("@decorator\n")
-    assert function.source_locations[0]["start_line"] == 4
-    assert function.source_locations[0]["end_line"] == 6
-    assert any(b.content_data.get("symbol_name") == "Example" for b in result.blocks)
-    assert "write_text('executed')" in "\n".join(texts(result))
-
-
-def test_python_invalid_syntax_is_preserved_with_warning(tmp_path: Path):
-    source = tmp_path / "invalid.py"
-    source.write_text("def broken(:\n", encoding="utf-8")
-    result = parse_file(source, "py")
-    assert "python_syntax_error" in result.quality_flags
-    assert texts(result) == ["def broken(:\n"]
+    source.write_text("raise RuntimeError('must not be executed')", encoding="utf-8")
+    def unexpected_read(*args, **kwargs):
+        raise AssertionError("対象外の原本内容を読んではいけません")
+    monkeypatch.setattr(Path, "read_bytes", unexpected_read)
+    with pytest.raises(ValueError, match="未対応"):
+        parse_file(source, f".{file_format.upper()}")
 
 
 def test_excel_reads_all_sheets_and_separates_formula_from_cache(tmp_path: Path):

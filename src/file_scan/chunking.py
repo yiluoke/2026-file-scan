@@ -34,7 +34,7 @@ def build_chunks(blocks: list[Block], title: str, max_characters: int = 1800,
         raise ValueError("invalid chunk limits")
     chunks: list[Chunk] = []
     texts, mappings = [], []
-    flags, identifiers = set(), set()
+    flags = set()
     key, prefix, context = None, "", ""
 
     def flush():
@@ -47,13 +47,12 @@ def build_chunks(blocks: list[Block], title: str, max_characters: int = 1800,
         chunks.append(Chunk(
             chunk_id="sha256:" + hashlib.sha256(identity.encode()).hexdigest(),
             title=context, content_text=content, search_text=search, blocks=list(mappings),
-            artifact_type=key[2], quality_flags=sorted(flags), identifiers=sorted(identifiers),
+            artifact_type=key[2], quality_flags=sorted(flags),
             token_count=count_tokens(search),
         ))
         texts.clear()
         mappings.clear()
         flags.clear()
-        identifiers.clear()
 
     for block in blocks:
         if block.element_type in {"document", "sheet", "section", "heading", "navigation"}:
@@ -136,9 +135,6 @@ def build_chunks(blocks: list[Block], title: str, max_characters: int = 1800,
                 full_prefix = context + "\n" + headers + "\n\n" if headers else context + "\n\n"
                 if prefix != full_prefix:
                     flags.add("search_context_truncated")
-                symbol = block.content_data.get("symbol_name")
-                if isinstance(symbol, str):
-                    identifiers.add(symbol)
             start = end
             if start < len(text):
                 flush()

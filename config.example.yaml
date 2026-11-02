@@ -21,7 +21,7 @@ sources:
     exclude_directories: [旧版/]
     exclude_filenames: ['~$*', '*.tmp', '*_作業中.*']
 
-include_extensions: ['.txt', '.md', '.py', '.xlsx', '.xlsm', '.docx', '.pdf']
+include_extensions: ['.txt', '.md', '.xlsx', '.xlsm', '.docx', '.pdf']
 max_file_bytes: 104857600
 copy_retries: 2
 parse_timeout_seconds: 120

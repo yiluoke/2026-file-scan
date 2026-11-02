@@ -1,10 +1,14 @@
 # 2026-file-scan
 
-部署内の維持管理システムに関するソース、設計書、マニュアル、問い合わせ記録、障害対応記録を横断して調査・相談するナレッジ基盤。
+部署内の維持管理システムに関する設計書、マニュアル、問い合わせ記録、障害対応記録を横断して調査・相談するナレッジ基盤。
 
 第1版は、ファイルサーバー等の指定フォルダを収集し、文書構造・原本位置・チャンクをDBへ**下書き登録するCLI**を提供する。検索・AI回答を接続する前に、何を取り込めたかと抽出不足を確認するための実装である。
 
 2026-10-25更新：取り込みの8改善を適用。変更仕様と既存DBの移行方法は[取り込み改善設計（v3）](docs/design/05-ingestion-improvements.md)を参照。
+
+2026-11-01：取込対象をWord（DOCX）・Excel（XLSX/XLSM）・PDF・TXT・Markdownに限定した。プログラム解析は別処理で設計・実装するため、本処理には含めない。SQL・JSON・YAML・YML・CSV・LOGも原本の取込対象外とする。YAMLの実行設定、JSON/JSONLの確認用出力、DB用SQLは引き続き使用する。
+
+図解は[ファイル取込処理の説明資料](docs/explanation/README.md)、対象範囲の変更と既存環境への適用は[文書形式への限定](docs/implementation/document-only-ingestion.md)を参照。
 
 ## 最初に動かす
 
@@ -55,15 +59,13 @@ Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。
 | 入力 | 現在の方式 |
 | --- | --- |
 | TXT・Markdown | UTF-8／CP932のテキスト抽出、行位置、Markdown見出し |
-| SQL・JSON・YAML・YML・CSV・LOG | 構文解析・実行をせず、テキストと行位置を保持 |
-| Python | 実行せずASTで関数・クラス等を抽出 |
 | XLSX・XLSM | openpyxlとOOXMLで複数シート、結合、数式と保存済み結果、画像を抽出 |
 | DOCX | OOXMLを直接読み、段落・表の順序、見出し、目次参照、画像を抽出 |
 | PDF | 標準はDoclingの実モデルによる本文・表・レイアウト抽出。原本座標と画像を保持し、文字なしページはOCR待ちとして記録 |
 
 DoclingによるPDFの段組み・表・領域座標は抽出するが、全原本の完全復元は保証しない。Wordの表示レイアウトの再現は未対応。画像は実体と原本位置を保持し、OCR・画像説明待ちの`pending_images`として記録する。旧形式のDOC・XLS・PPTとPPTXは第1版の対象外。
 
-同梱設定の収集拡張子はTXT・MD・PY・XLSX・XLSM・DOCX・PDFに限定している。SQLやログ等も収集する場合は、`include_extensions`へ対象拡張子を追加する。
+収集対象はTXT・MD・XLSX・XLSM・DOCX・PDF。Markdownの別拡張子`.markdown`も明示設定できる。`include_extensions`は対応文書形式の部分集合だけを受け付け、プログラム・SQL・JSON・YAML・YML・CSV・LOG等の追加は設定エラーにする。
 
 DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`はローカル抽出までを行い、`embed`が有効な場合に抽出テキストを外部APIへ送信する。画像解析API、Dify本体、利用者別ACL、レビュー承認画面は未実装。検索APIと管理者コマンドによる明示公開は[検索APIの操作手順](docs/implementation/search-api.md)へ追加した。取り込みデータのdraftは維持する。
 

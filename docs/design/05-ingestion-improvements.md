@@ -2,6 +2,10 @@
 
 更新日：2026-10-25。今回の8項目の実装仕様。検索公開・リリース別採用・ACL・チャットは従来どおり未実装で、成果物はdraftのまま保持する。
 
+2026-11-01：取込対象をWord（DOCX）・Excel（XLSX/XLSM）・PDF・TXT・Markdownに限定した。プログラム解析は別処理で設計・実装するため、本処理には含めない。SQL・JSON・YAML・YML・CSV・LOGも原本の取込対象外とする。YAMLの実行設定、JSON/JSONLの確認用出力、DB用SQLは引き続き使用する。
+
+既存環境の設定修正・再取込・履歴の扱いは[文書形式への限定](../implementation/document-only-ingestion.md)を参照。
+
 ## 1. 処理の流れと選択世代
 
 ```mermaid

@@ -220,7 +220,7 @@ def test_batch_lock_rejects_second_writer(database):
                 pass
 
 
-def test_native_office_pdf_and_python_register_together(database, settings):
+def test_native_documents_register_and_program_files_are_excluded(database, settings):
     from docx import Document
     from openpyxl import Workbook
     from reportlab.pdfgen import canvas
@@ -240,12 +240,14 @@ def test_native_office_pdf_and_python_register_together(database, settings):
     pdf.save()
     (root / "script.py").write_text("def register(name):\n    return name.strip()\n", encoding="utf-8")
     extended = replace(settings, pdf_backend="native",
-                       include_extensions=(".md", ".docx", ".xlsx", ".pdf", ".py"))
+                       include_extensions=(".md", ".docx", ".xlsx", ".pdf"))
     result = pipeline.ingest(extended, database)
-    assert result["summary"]["registered"] == 5
+    assert result["summary"]["registered"] == 4
     assert result["summary"]["failed"] == 0
-    assert count(database, "document_versions") == 5
-    assert count(database, "chunk_blocks") >= 5
+    assert count(database, "document_versions") == 4
+    assert count(database, "chunk_blocks") >= 4
+    assert any(entry["relative_path"] == "script.py" and entry["reason"] == "unsupported_extension"
+               for entry in result["exclusions"])
 
 
 def test_cli_scan_init_ingest_status(tmp_path, capsys):

@@ -7,12 +7,10 @@ PDFのnativeルートは軽量な文字抽出であり、レイアウト解析�
 
 from __future__ import annotations
 
-import ast
 import io
 import mimetypes
 import posixpath
 import re
-import tokenize
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, time
 from functools import lru_cache
@@ -54,7 +52,7 @@ def parse_file(
     """形式に応じて抽出する。未対応形式や読めない原本は例外にする。
 
     品質警告や画像の後続処理待ちはExtractionResultに残し、成功と区別する。
-    ファイル名から実行モジュールを読み込むことはなく、PythonもAST解析だけを行う。
+    対象はOffice・PDF・TXT・Markdown。プログラム・設定・ログ等は処理しない。
     """
     path = Path(path)
     if not path.is_file():
@@ -62,11 +60,8 @@ def parse_file(
     fmt = file_format.lower().lstrip(".")
     if pdf_backend not in {"native", "docling"}:
         raise ValueError(f"未対応のPDF抽出方式です: {pdf_backend}")
-    if fmt in {"txt", "md", "markdown", "sql", "json", "yaml", "yml", "csv", "log"}:
-        # 設定・ログ・SQL等は構文を評価せず、まず原文と行位置を取得する。
+    if fmt in {"txt", "md", "markdown"}:
         result = _parse_text(path, markdown=fmt in {"md", "markdown"}, source_format=fmt)
-    elif fmt in {"py", "python"}:
-        result = _parse_python(path)
     elif fmt in {"xlsx", "xlsm"}:
         result = _parse_excel(path, include_hidden=include_hidden)
     elif fmt == "docx":
@@ -101,18 +96,11 @@ def _scalar(value: Any) -> Any:
     return str(value)
 
 
-def _decode_text(path: Path, *, python: bool = False) -> tuple[str, str]:
+def _decode_text(path: Path) -> tuple[str, str]:
     """置換文字で誤魔化さずに読み、失敗したら明示的に停止する。"""
     raw = path.read_bytes()
     if b"\x00" in raw:
         raise ValueError("NULを含むため、対応するテキスト形式として読み取れません")
-    if python:
-        # coding: cp932等の宣言も、コードを実行せず標準ライブラリで読み取れる。
-        try:
-            encoding, _ = tokenize.detect_encoding(io.BytesIO(raw).readline)
-            return raw.decode(encoding), encoding
-        except (SyntaxError, UnicodeError):
-            pass
     for encoding in ("utf-8-sig", "cp932"):
         try:
             return raw.decode(encoding), encoding
@@ -161,55 +149,6 @@ def _parse_text(path: Path, *, markdown: bool, source_format: str) -> Extraction
         elif start is None:
             start = index
     append_paragraph(len(lines))
-    return result
-
-
-def _parse_python(path: Path) -> ExtractionResult:
-    """トップレベルの定義とその前後を、実行せず行位置付きで保持する。"""
-    text, encoding = _decode_text(path, python=True)
-    lines = text.splitlines(keepends=True)
-    result = ExtractionResult(metrics={"encoding": encoding, "lines": len(lines)})
-    try:
-        tree = ast.parse(text, filename=path.name)
-    except SyntaxError as exc:
-        _flag(result, "python_syntax_error")
-        result.metrics["syntax_error_line"] = exc.lineno
-        if text.strip():
-            result.blocks.append(Block(
-                block_id="python-file", element_type="code", content_text=text,
-                source_locations=[{"format": "py", "path": str(path), "start_line": 1, "end_line": len(lines)}],
-                quality_flags=["python_syntax_error"], extraction_method="text_decode",
-            ))
-        return result
-    next_line = 1
-
-    def append_code(start: int, end: int, node: ast.AST | None = None) -> None:
-        raw = "".join(lines[start - 1:end])
-        if not raw.strip():
-            return
-        data: dict[str, Any] = {}
-        if node is not None:
-            data = {
-                "symbol_name": getattr(node, "name", None),
-                "symbol_type": type(node).__name__,
-                "identifiers": sorted({n.id for n in ast.walk(node) if isinstance(n, ast.Name)}),
-            }
-        result.blocks.append(Block(
-            block_id=f"python-{start}-{end}", element_type="code", content_text=raw,
-            source_locations=[{"format": "py", "path": str(path), "start_line": start, "end_line": end}],
-            section_path=[data["symbol_name"]] if data else [], content_data=data, extraction_method="python_ast",
-        ))
-
-    for node in tree.body:
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        decorators = getattr(node, "decorator_list", [])
-        start = min([node.lineno, *[d.lineno for d in decorators]])
-        end = node.end_lineno or node.lineno
-        append_code(next_line, start - 1)
-        append_code(start, end, node)
-        next_line = end + 1
-    append_code(next_line, len(lines))
     return result
 
 

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="146" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 146" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="146"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-146)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="13" width="175" height="120" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="129" width="175" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="108" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,216) scale(1,-1)">原本PDFの1ページ</text>
+			<text x="13" y="86" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,172) scale(1,-1)">見出し：操作方法</text>
+			<text x="13" y="69" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,138) scale(1,-1)">本文：IDを入力します。</text>
+			<text x="13" y="52" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,104) scale(1,-1)">表：項目 / 制約</text>
+			<text x="13" y="35" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,70) scale(1,-1)">図：画面イメージ</text>
+			<rect x="205" y="13" width="255" height="120" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="205" y="129" width="255" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="218" y="108" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,216) scale(1,-1)">Docling（CPU・OCR無効）</text>
+			<text x="218" y="86" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,172) scale(1,-1)">文字領域 → 段落ブロック</text>
+			<text x="218" y="69" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,138) scale(1,-1)">表領域 → 表本文 + セル構造</text>
+			<text x="218" y="52" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,104) scale(1,-1)">図領域 → 画像保存・解析待ち</text>
+			<text x="218" y="35" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,70) scale(1,-1)">ページ + bbox を保持</text>
+			<rect x="490" y="13" width="267.89" height="120" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="490" y="129" width="267.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="503" y="108" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,216) scale(1,-1)">search_text → ベクトル</text>
+			<text x="503" y="86" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,172) scale(1,-1)">ファイル名・直近の見出し</text>
+			<text x="503" y="69" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,138) scale(1,-1)">+ 抽出できた本文・表</text>
+			<text x="503" y="52" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,104) scale(1,-1)">画像内文字は未収録</text>
+			<text x="503" y="35" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,70) scale(1,-1)">図は自動で説明文にしない</text>
+			<path d="M 178,72 L 201,72 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="201 72, 195 75, 195 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<path d="M 463,72 L 486,72 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="486 72, 480 75, 480 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+		</g>
+	</g>
+</svg>

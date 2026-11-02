@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="148" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 148" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="148"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-148)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="25" width="235" height="112" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="133" width="235" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="112" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,224) scale(1,-1)">検索用テキスト</text>
+			<text x="13" y="90" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,180) scale(1,-1)">「ユーザーIDは必須です」</text>
+			<text x="13" y="73" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,146) scale(1,-1)">→ Embedding API</text>
+			<text x="13" y="56" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,112) scale(1,-1)">→ [0.12, -0.08, …]</text>
+			<text x="13" y="39" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,78) scale(1,-1)">既定1,536次元の数値列</text>
+			<path d="M 245,80 L 280,80 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="280 80, 274 83, 274 77" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="294" y="25" width="205" height="112" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="294" y="133" width="205" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="307" y="112" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,224) scale(1,-1)">意味の近さを比較</text>
+			<text x="307" y="90" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,180) scale(1,-1)">近い話題ほど近くに置かれる</text>
+			<text x="307" y="73" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,146) scale(1,-1)">イメージで理解する</text>
+			<text x="307" y="56" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,112) scale(1,-1)">実際は1,536次元</text>
+			<path d="M 510,80 L 540,80 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="540 80, 534 83, 534 77" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="554" y="17" width="203.89" height="123" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,96%,96%); fill-rule: evenodd;"/>
+			<path d="M 570,33 L 738,33 Z" style="stroke: rgb(32%,40%,47%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="738 33, 732 36, 732 30" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(32%,40%,47%); fill-rule: evenodd;"/>
+			<path d="M 570,33 L 570,127 Z" style="stroke: rgb(32%,40%,47%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="570 127, 567 121, 573 121" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(32%,40%,47%); fill-rule: evenodd;"/>
+			<circle cx="605" cy="107" r="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="589" y="118" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 9px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,236) scale(1,-1)">IDの入力条件</text>
+			<circle cx="614" cy="81" r="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="598" y="92" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 9px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,184) scale(1,-1)">IDは必須</text>
+			<circle cx="693" cy="48" r="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<text x="677" y="59" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 9px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,118) scale(1,-1)">DBバックアップ</text>
+			<text x="555" y="3" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 9px;fill: rgb(32%,40%,47%); stroke:none;" transform="translate(0,6) scale(1,-1)">2次元の概念図・実測値ではありません</text>
+		</g>
+	</g>
+</svg>

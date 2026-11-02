@@ -10,7 +10,7 @@ import pytest
 import yaml
 
 from file_scan.collector import collect
-from file_scan.config import ConfigError, Settings, Source, load_config
+from file_scan.config import ConfigError, Settings, Source, load_config, validate_settings
 from file_scan.storage import (
     AssetIntegrityError, FileTooLargeError, SourceChangedError, Storage, StoredAssetMissingError,
     UnsafePathError,
@@ -44,6 +44,34 @@ def test_config_resolves_paths_relative_to_configuration_and_applies_defaults(tm
     assert settings.pdf_backend == "docling"
     assert settings.docling_artifacts_path == tmp_path / "data/models/docling"
     assert settings.knowledge_id == "default"
+    assert set(settings.include_extensions) == {".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md"}
+
+
+@pytest.mark.parametrize("extension", [".py", ".sql", ".json", ".yaml", ".yml", ".csv", ".log"])
+def test_program_and_data_formats_cannot_be_enabled_in_configuration(tmp_path, extension):
+    with pytest.raises(ConfigError, match="文書形式"):
+        load_config(write_config(tmp_path, include_extensions=[".txt", extension]))
+    with pytest.raises(ConfigError, match="文書形式"):
+        validate_settings(configured(tmp_path, include_extensions=(".txt", extension.upper())))
+
+
+def test_collection_only_includes_documents_and_reports_other_formats_as_excluded(tmp_path):
+    settings = configured(tmp_path)
+    root = settings.sources[0].root
+    removed = ["script.py", "query.sql", "data.json", "settings.yaml", "settings.yml", "table.csv", "server.log"]
+    documents = ["manual.TXT", "notes.md", "design.docx", "table.xlsx", "macro.xlsm", "manual.pdf"]
+    for filename in documents + removed:
+        (root / filename).write_text("sample", encoding="utf-8")
+    result = collect(settings)
+    assert {item.relative_path for item in result.items} == set(documents)
+    assert {entry["relative_path"] for entry in result.exclusions} == set(removed)
+    assert all(entry["reason"] == "unsupported_extension" for entry in result.exclusions)
+
+
+def test_markdown_long_extension_remains_an_optional_document_format(tmp_path):
+    settings = configured(tmp_path, include_extensions=(".markdown",))
+    (settings.sources[0].root / "manual.markdown").write_text("# 操作\n手順", encoding="utf-8")
+    assert [item.format for item in collect(settings).items] == ["markdown"]
 
 
 def test_database_environment_override_and_secrets_not_in_repr(tmp_path, monkeypatch):
