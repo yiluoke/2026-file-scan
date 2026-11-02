@@ -2,6 +2,8 @@
 
 実装日：2026-10-25、検証更新：2026-10-26。文書ACL・SSOを保留した`local_prototype`。Dify本体の配備・Chatflowは別途行う。
 
+Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番環境構築手順](search-api-production.md)を参照。
+
 ## 実装した範囲
 
 - `POST /search-with-status`：根拠、出典、対象版、取り込み・公開・索引の不足を返す。

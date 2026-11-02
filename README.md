@@ -137,6 +137,10 @@ PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。�
 
 ## 検索API
 
+本番導入は[検索APIの本番環境構築手順](docs/implementation/search-api-production.md)を参照。Ubuntu VMでのDB・設定・公開管理、systemd常駐化、NginxによるHTTPS接続、受入確認・復旧までをまとめている。
+
+仕組みを図で理解する場合は[検索APIの図解PDF](output/pdf/検索API_図解ガイド.pdf)を参照。[Markdown版](docs/explanation/検索API_図解ガイド.md)も同じ内容で、現行コードへの根拠リンクを付けている。
+
 取り込みCLIから独立した`file-search`を追加した。ソースは取り込みが`src/file_scan/`、検索が`src/search/`の並列構成とする。上記の固定依存の導入には検索用extraも含まれる。取り込みv3の初期化後に次を実行する。
 
 ```sh
