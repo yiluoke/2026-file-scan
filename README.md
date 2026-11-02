@@ -10,6 +10,8 @@
 
 図解は[ファイル取込処理の説明資料](docs/explanation/README.md)、対象範囲の変更と既存環境への適用は[文書形式への限定](docs/implementation/document-only-ingestion.md)を参照。
 
+2026-11-02：取込・検索のDBテーブルを専用スキーマ`winnap`へ配置する。新規作成と既存`public`からのデータ保持移行は[専用スキーマの手順](docs/implementation/winnap-schema.md)を参照。pgvectorの配置は`public`のまま維持する。
+
 ## 最初に動かす
 
 別環境へ導入する場合は、[環境構築手順](docs/implementation/environment-setup.md)を参照。Pythonと必要ライブラリ、DB・テーブル、モデル、認証設定、公開サンプルによる確認を順にまとめている。Windows PowerShellと閉域環境の手順も記載する。
@@ -150,6 +152,7 @@ DBを使わずAPI接続を試す場合は、`search.test_mode: true`を設定し
 | 1. 文書変換処理 | [文書変換処理](docs/design/01-document-conversion.md) | 詳細設計案 |
 | 2. 検索基盤・API | [検索基盤・検索API](docs/design/02-search-platform.md) | 検索処理・API契約の設計案 |
 | 3. LLM＋チャット画面 | [LLM＋チャット画面](docs/design/03-llm-chat.md) | 概要設計案 |
+| 4. C++／Qt 5ソース解析取込 | [初期版仕様](docs/design/09-cpp-qt-source-ingestion-spec.md) | CodeWiki・Qt補完・仕様書生成・既存取込接続の仕様。未実装 |
 | 共通. データベース | [テーブル設計](docs/design/04-database-tables.md) | 論理・カラム・制約・索引の詳細設計案 |
 
 検索APIの見直しと参考にした実装は[GitHub検索API比較](docs/research/2026-10-25-github-search-api-comparison.md)を参照。検索APIと検索専用コピーへの明示公開は実装済み。文書ACL・SSOは保留。

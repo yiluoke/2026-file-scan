@@ -91,6 +91,8 @@ DB接続を閉じてからAPIを呼び、検査済み応答を短いトランザ
 
 ## 9. DB移行と運用
 
+2026-11-02から物理配置は専用スキーマ`winnap`。管理版v3は維持する。旧public配置の移行は[専用スキーマの手順](../implementation/winnap-schema.md)を先に行う。
+
 スキーマv3は`selected_generations`、`extraction_cache`、`embedding_cache`と入力ハッシュ照合用索引を追加する。v1からはEmbedding用2表も追加する。既存表・原本・世代・ベクトルを削除しない。未知版、管理表の欠落、追加先の同名衝突は自動修復しない。
 
 ```sh

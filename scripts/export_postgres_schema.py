@@ -11,15 +11,23 @@ from sqlalchemy.schema import AddConstraint, CreateIndex, CreateTable, SetColumn
 from sqlalchemy.sql.ddl import sort_tables_and_constraints
 
 from file_scan.db import SCHEMA_VERSION, metadata
+from file_scan.namespace import APPLICATION_SCHEMA, validate_namespace
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "sql" / "postgresql" / f"schema-v{SCHEMA_VERSION}.sql"
 
 
-def render_schema() -> str:
+def render_schema(schema: str = APPLICATION_SCHEMA) -> str:
     """新規作成専用。client-side defaultをDBのDEFAULTへ勝手に変更しない。"""
     dialect = postgresql.dialect()
-    table_names = sorted(metadata.tables)
+    validate_namespace(schema)
+    schema_sql = dialect.identifier_preparer.quote_schema(schema)
+    schema_literal = str(literal(schema, type_=Text()).compile(
+        dialect=dialect, compile_kwargs={"literal_binds": True}))
+    compile_options = {"dialect": dialect, "schema_translate_map": {APPLICATION_SCHEMA: schema},
+                       "render_schema_translate": True}
+    tables = {table.name: table for table in metadata.tables.values()}
+    table_names = sorted(tables)
     names_sql = ",\n            ".join(str(literal(name, type_=Text()).compile(
         dialect=dialect, compile_kwargs={"literal_binds": True})) for name in table_names)
     parts = [f"""-- 2026-file-scan: PostgreSQL schema v{SCHEMA_VERSION}
@@ -33,8 +41,9 @@ def render_schema() -> str:
 -- Run with: psql ... -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v{SCHEMA_VERSION}.sql
 
 BEGIN;
-SET LOCAL search_path = public, pg_catalog;
 SELECT pg_advisory_xact_lock(20261018, 1);
+CREATE SCHEMA IF NOT EXISTS {schema_sql};
+SET LOCAL search_path = {schema_sql}, public;
 
 -- Refuse partial/existing installations instead of masking schema differences.
 DO $file_scan_preflight$
@@ -43,12 +52,13 @@ BEGIN
         SELECT 1
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
+        WHERE (n.nspname = {schema_literal}
+               OR ({schema_literal} = 'winnap' AND n.nspname = 'public'))
           AND c.relname IN (
             {names_sql}
           )
     ) THEN
-        RAISE EXCEPTION 'file-scan tables already exist in schema %. Use file-scan init-db for upgrades.', current_schema();
+        RAISE EXCEPTION 'file-scan tables already exist in schema % or public. Use init-db for upgrades or scripts/migrate_postgres_schema.py for public migration.', current_schema();
     END IF;
 END;
 $file_scan_preflight$;
@@ -68,27 +78,27 @@ END;
 $file_scan_extension$;"""]
     deferred = []
     for table, constraints in sort_tables_and_constraints(
-        [metadata.tables[name] for name in table_names]
+        [tables[name] for name in table_names]
     ):
         if table is None:
             deferred.extend(constraints)
             continue
         statement = CreateTable(table, include_foreign_key_constraints=constraints)
-        parts.append(f"-- Table: {table.name}\n" + str(statement.compile(dialect=dialect)).strip() + ";")
+        parts.append(f"-- Table: {table.name}\n" + str(statement.compile(**compile_options)).strip() + ";")
         for column in table.columns:
             if column.comment is not None:
-                parts.append(str(SetColumnComment(column).compile(dialect=dialect)).strip() + ";")
+                parts.append(str(SetColumnComment(column).compile(**compile_options)).strip() + ";")
     parts.append("-- Deferred foreign keys (document/version circular reference).")
     for constraint in sorted(deferred, key=lambda c: (c.table.name, c.name or "")):
         # AddConstraintの既定動作で共有metadataの生成規則を書き換えない。
         parts.append(str(AddConstraint(constraint, isolate_from_table=False).compile(
-            dialect=dialect)).strip() + ";")
+            **compile_options)).strip() + ";")
     parts.append("-- Explicit indexes (PK/UNIQUE indexes are created by constraints above).")
     for name in table_names:
-        for index in sorted(metadata.tables[name].indexes, key=lambda i: i.name):
-            parts.append(str(CreateIndex(index).compile(dialect=dialect)).strip() + ";")
+        for index in sorted(tables[name].indexes, key=lambda i: i.name):
+            parts.append(str(CreateIndex(index).compile(**compile_options)).strip() + ";")
     parts.append(f"""-- Required for require_schema() and init-db replay. Business tables remain empty.
-INSERT INTO schema_migrations (version, applied_at, created_at)
+INSERT INTO {schema_sql}.schema_migrations (version, applied_at, created_at)
 VALUES ({SCHEMA_VERSION}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 COMMIT;

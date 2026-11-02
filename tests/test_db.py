@@ -209,7 +209,7 @@ def test_metadata_compiles_for_postgresql_without_missing_foreign_tables():
     ddl = "\n".join(statements)
     assert "JSONB" in ddl
     assert "TEXT[]" in ddl
-    assert "ALTER TABLE documents ADD CONSTRAINT fk_documents_latest_version" in ddl
+    assert "ALTER TABLE winnap.documents ADD CONSTRAINT fk_documents_latest_version" in ddl
     assert "WHERE status IN ('queued', 'running')" in ddl
     assert "embedding_profiles" in {fk.column.table.name for table in tables.values() for fk in table.foreign_keys}
 

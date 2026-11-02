@@ -106,7 +106,8 @@ def ingestion_lock(engine: Engine):
 def require_schema(engine: Engine) -> None:
     """ingestが既存DBへ勝手にDDLを実行しないよう、初期化を別コマンドにする。"""
     with engine.connect() as conn:
-        existing = set(inspect(conn).get_table_names())
+        from file_scan.namespace import database_schema
+        existing = set(inspect(conn).get_table_names(schema=database_schema(conn)))
         if "schema_migrations" not in existing:
             raise PipelineError("先に init-db --config 設定ファイル を実行してください")
         versions = list(conn.execute(select(tables["schema_migrations"].c.version)).scalars())

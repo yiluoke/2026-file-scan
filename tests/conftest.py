@@ -4,7 +4,6 @@ import os
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from file_scan.db import migrate, open_database
@@ -19,13 +18,7 @@ def postgres_database():
     schema = "test_file_scan_" + uuid4().hex
     with admin.begin() as connection:
         connection.execute(CreateSchema(schema))
-    engine = open_database(url)
-
-    @event.listens_for(engine, "connect")
-    def search_path(dbapi, _):
-        with dbapi.cursor() as cursor:
-            cursor.execute(f'SET search_path TO "{schema}", public')
-        dbapi.commit()
+    engine = open_database(url, schema=schema)
 
     try:
         migrate(engine)

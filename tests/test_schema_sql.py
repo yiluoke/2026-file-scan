@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from sqlalchemy import event, inspect, select
+from sqlalchemy import inspect, select
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from file_scan.config import Settings, Source
@@ -35,13 +35,7 @@ def empty_postgres():
     schema = "test_file_scan_ddl_" + uuid4().hex
     with admin.begin() as connection:
         connection.execute(CreateSchema(schema))
-    engine = open_database(url)
-
-    @event.listens_for(engine, "connect")
-    def search_path(dbapi, _):
-        with dbapi.cursor() as cursor:
-            cursor.execute(f'SET search_path TO "{schema}", public')
-        dbapi.commit()
+    engine = open_database(url, schema=schema)
 
     try:
         yield engine, schema
@@ -53,11 +47,7 @@ def empty_postgres():
 
 
 def install_sql(engine, schema, sql=None):
-    script = SQL_PATH.read_text(encoding="utf-8") if sql is None else sql
-    # DDLはそのまま使い、作成先だけを自分で生成した一時schemaへ限定する。
-    original = "SET LOCAL search_path = public, pg_catalog;"
-    assert script.count(original) == 1
-    script = script.replace(original, f'SET LOCAL search_path = "{schema}", public, pg_catalog;')
+    script = exporter.render_schema(schema) if sql is None else sql
     raw = engine.raw_connection()
     dbapi = raw.driver_connection
     try:
@@ -75,7 +65,7 @@ def install_sql(engine, schema, sql=None):
 
 def describe_schema(engine):
     inspector = inspect(engine)
-    schema = inspector.default_schema_name
+    schema = engine.get_execution_options()["schema_translate_map"]["winnap"]
 
     def normalized(value):
         if isinstance(value, dict):
@@ -87,17 +77,17 @@ def describe_schema(engine):
         return value
 
     result = {}
-    for name in sorted(metadata.tables):
+    for name in sorted(t.name for t in metadata.tables.values()):
         columns = [{key: str(column[key]) if key == "type" else column[key]
                     for key in ("name", "type", "nullable", "default", "comment")}
-                   for column in inspector.get_columns(name)]
+                   for column in inspector.get_columns(name, schema=schema)]
         result[name] = normalized({
             "columns": columns,
-            "primary_key": inspector.get_pk_constraint(name),
-            "unique": sorted(inspector.get_unique_constraints(name), key=lambda row: row["name"]),
-            "checks": sorted(inspector.get_check_constraints(name), key=lambda row: row["name"]),
-            "foreign_keys": sorted(inspector.get_foreign_keys(name), key=lambda row: row["name"]),
-            "indexes": sorted(inspector.get_indexes(name), key=lambda row: row["name"]),
+            "primary_key": inspector.get_pk_constraint(name, schema=schema),
+            "unique": sorted(inspector.get_unique_constraints(name, schema=schema), key=lambda row: row["name"]),
+            "checks": sorted(inspector.get_check_constraints(name, schema=schema), key=lambda row: row["name"]),
+            "foreign_keys": sorted(inspector.get_foreign_keys(name, schema=schema), key=lambda row: row["name"]),
+            "indexes": sorted(inspector.get_indexes(name, schema=schema), key=lambda row: row["name"]),
         })
     return result
 
@@ -105,7 +95,7 @@ def describe_schema(engine):
 def test_sql_schema_matches_migration_and_app_can_ingest(empty_postgres, postgres_database, tmp_path):
     engine, schema = empty_postgres
     install_sql(engine, schema)
-    assert set(inspect(engine).get_table_names()) == set(metadata.tables)
+    assert set(inspect(engine).get_table_names(schema=schema)) == {t.name for t in metadata.tables.values()}
     assert describe_schema(engine) == describe_schema(postgres_database)
     require_schema(engine)
     migrate(engine)  # SQLの版登録が現行アプリにも認識され、再初期化されない。
@@ -127,10 +117,10 @@ def test_sql_schema_matches_migration_and_app_can_ingest(empty_postgres, postgre
 
 def test_failed_installation_rolls_back_all_tables(empty_postgres):
     engine, schema = empty_postgres
-    script = SQL_PATH.read_text(encoding="utf-8").replace(
+    script = exporter.render_schema(schema).replace(
         "\nCOMMIT;", "\nSELECT file_scan_deliberately_missing_function();\nCOMMIT;")
     with pytest.raises(psycopg.errors.UndefinedFunction):
         install_sql(engine, schema, script)
-    assert inspect(engine).get_table_names() == []
+    assert inspect(engine).get_table_names(schema=schema) == []
     install_sql(engine, schema)
     require_schema(engine)

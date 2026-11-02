@@ -7,7 +7,7 @@ from uuid import uuid4
 
 import pytest
 import yaml
-from sqlalchemy import event, func, select
+from sqlalchemy import func, select
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 from file_scan import pipeline
@@ -35,13 +35,7 @@ def database(request, tmp_path):
     schema = "test_file_scan_" + uuid4().hex
     with admin.begin() as conn:
         conn.execute(CreateSchema(schema))
-    engine = open_database(url)
-
-    @event.listens_for(engine, "connect")
-    def set_search_path(dbapi, _):
-        with dbapi.cursor() as cursor:
-            cursor.execute(f'SET search_path TO "{schema}", public')
-        dbapi.commit()
+    engine = open_database(url, schema=schema)
 
     try:
         migrate(engine)

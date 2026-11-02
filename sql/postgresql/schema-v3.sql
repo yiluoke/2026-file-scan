@@ -9,8 +9,9 @@
 -- Run with: psql ... -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v3.sql
 
 BEGIN;
-SET LOCAL search_path = public, pg_catalog;
 SELECT pg_advisory_xact_lock(20261018, 1);
+CREATE SCHEMA IF NOT EXISTS winnap;
+SET LOCAL search_path = winnap, public;
 
 -- Refuse partial/existing installations instead of masking schema differences.
 DO $file_scan_preflight$
@@ -19,7 +20,8 @@ BEGIN
         SELECT 1
         FROM pg_catalog.pg_class c
         JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = current_schema()
+        WHERE (n.nspname = 'winnap'
+               OR ('winnap' = 'winnap' AND n.nspname = 'public'))
           AND c.relname IN (
             'artifact_assets',
             'artifact_relations',
@@ -43,7 +45,7 @@ BEGIN
             'selected_generations'
           )
     ) THEN
-        RAISE EXCEPTION 'file-scan tables already exist in schema %. Use file-scan init-db for upgrades.', current_schema();
+        RAISE EXCEPTION 'file-scan tables already exist in schema % or public. Use init-db for upgrades or scripts/migrate_postgres_schema.py for public migration.', current_schema();
     END IF;
 END;
 $file_scan_preflight$;
@@ -63,7 +65,7 @@ END;
 $file_scan_extension$;
 
 -- Table: artifact_assets
-CREATE TABLE artifact_assets (
+CREATE TABLE winnap.artifact_assets (
 	asset_id TEXT NOT NULL,
 	storage_key TEXT NOT NULL,
 	mime_type TEXT NOT NULL,
@@ -81,7 +83,7 @@ CREATE TABLE artifact_assets (
 );
 
 -- Table: conversion_profiles
-CREATE TABLE conversion_profiles (
+CREATE TABLE winnap.conversion_profiles (
 	conversion_revision TEXT NOT NULL,
 	schema_version TEXT NOT NULL,
 	configuration JSONB NOT NULL,
@@ -93,7 +95,7 @@ CREATE TABLE conversion_profiles (
 );
 
 -- Table: documents
-CREATE TABLE documents (
+CREATE TABLE winnap.documents (
 	document_id TEXT NOT NULL,
 	source_system TEXT NOT NULL,
 	source_key TEXT NOT NULL,
@@ -120,7 +122,7 @@ CREATE TABLE documents (
 );
 
 -- Table: embedding_profiles
-CREATE TABLE embedding_profiles (
+CREATE TABLE winnap.embedding_profiles (
 	embedding_profile_id TEXT NOT NULL,
 	provider TEXT NOT NULL,
 	model TEXT NOT NULL,
@@ -134,7 +136,7 @@ CREATE TABLE embedding_profiles (
 );
 
 -- Table: ingestion_settings
-CREATE TABLE ingestion_settings (
+CREATE TABLE winnap.ingestion_settings (
 	singleton_id SERIAL NOT NULL,
 	storage_root TEXT NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -144,7 +146,7 @@ CREATE TABLE ingestion_settings (
 );
 
 -- Table: knowledge_bases
-CREATE TABLE knowledge_bases (
+CREATE TABLE winnap.knowledge_bases (
 	knowledge_id TEXT NOT NULL,
 	name TEXT NOT NULL,
 	system_id TEXT NOT NULL,
@@ -164,12 +166,12 @@ CREATE TABLE knowledge_bases (
 	CONSTRAINT ck_knowledge_bases_scan_status CHECK (scan_status IN ('unknown', 'running', 'succeeded', 'partial', 'failed'))
 );
 
-COMMENT ON COLUMN knowledge_bases.default_release_id IS 'v1はNULLのみ。リリースFKは後続';
+COMMENT ON COLUMN winnap.knowledge_bases.default_release_id IS 'v1はNULLのみ。リリースFKは後続';
 
-COMMENT ON COLUMN knowledge_bases.embedding_profile_id IS 'v1はNULLのみ。Embedding FKは後続';
+COMMENT ON COLUMN winnap.knowledge_bases.embedding_profile_id IS 'v1はNULLのみ。Embedding FKは後続';
 
 -- Table: schema_migrations
-CREATE TABLE schema_migrations (
+CREATE TABLE winnap.schema_migrations (
 	version SERIAL NOT NULL,
 	applied_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -178,7 +180,7 @@ CREATE TABLE schema_migrations (
 );
 
 -- Table: document_versions
-CREATE TABLE document_versions (
+CREATE TABLE winnap.document_versions (
 	document_id TEXT NOT NULL,
 	source_version TEXT NOT NULL,
 	asset_id TEXT NOT NULL,
@@ -194,12 +196,12 @@ CREATE TABLE document_versions (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (document_id, source_version),
 	CONSTRAINT ck_document_versions_original_bytes CHECK (asset_id = source_version),
-	FOREIGN KEY(document_id) REFERENCES documents (document_id) ON DELETE RESTRICT,
-	FOREIGN KEY(asset_id) REFERENCES artifact_assets (asset_id) ON DELETE RESTRICT
+	FOREIGN KEY(document_id) REFERENCES winnap.documents (document_id) ON DELETE RESTRICT,
+	FOREIGN KEY(asset_id) REFERENCES winnap.artifact_assets (asset_id) ON DELETE RESTRICT
 );
 
 -- Table: embedding_cache
-CREATE TABLE embedding_cache (
+CREATE TABLE winnap.embedding_cache (
 	embedding_profile_id TEXT NOT NULL,
 	input_hash TEXT NOT NULL,
 	dimensions INTEGER NOT NULL,
@@ -207,13 +209,13 @@ CREATE TABLE embedding_cache (
 	input_tokens INTEGER NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (embedding_profile_id, input_hash),
-	FOREIGN KEY(embedding_profile_id, dimensions) REFERENCES embedding_profiles (embedding_profile_id, dimensions),
+	FOREIGN KEY(embedding_profile_id, dimensions) REFERENCES winnap.embedding_profiles (embedding_profile_id, dimensions),
 	CONSTRAINT ck_embedding_cache_tokens CHECK (input_tokens > 0),
 	CONSTRAINT ck_embedding_cache_dimensions CHECK (vector_dims(embedding) = dimensions)
 );
 
 -- Table: extraction_cache
-CREATE TABLE extraction_cache (
+CREATE TABLE winnap.extraction_cache (
 	cache_key TEXT NOT NULL,
 	source_version TEXT NOT NULL,
 	extraction_revision TEXT NOT NULL,
@@ -221,11 +223,11 @@ CREATE TABLE extraction_cache (
 	payload_hash TEXT NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (cache_key),
-	FOREIGN KEY(source_version) REFERENCES artifact_assets (asset_id)
+	FOREIGN KEY(source_version) REFERENCES winnap.artifact_assets (asset_id)
 );
 
 -- Table: extraction_generations
-CREATE TABLE extraction_generations (
+CREATE TABLE winnap.extraction_generations (
 	generation_id TEXT NOT NULL,
 	document_id TEXT NOT NULL,
 	source_version TEXT NOT NULL,
@@ -239,17 +241,17 @@ CREATE TABLE extraction_generations (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (generation_id),
-	CONSTRAINT fk_generations_version FOREIGN KEY(document_id, source_version) REFERENCES document_versions (document_id, source_version) ON DELETE RESTRICT,
+	CONSTRAINT fk_generations_version FOREIGN KEY(document_id, source_version) REFERENCES winnap.document_versions (document_id, source_version) ON DELETE RESTRICT,
 	CONSTRAINT uq_generations_input UNIQUE (document_id, source_version, conversion_revision),
 	CONSTRAINT uq_generations_document UNIQUE (generation_id, document_id),
 	CONSTRAINT ck_generations_status CHECK (processing_status IN ('staging', 'succeeded', 'partial', 'failed')),
 	CONSTRAINT ck_generations_draft_only CHECK (publication_state = 'draft'),
 	CONSTRAINT ck_generations_no_publication_time CHECK (published_at IS NULL),
-	FOREIGN KEY(conversion_revision) REFERENCES conversion_profiles (conversion_revision) ON DELETE RESTRICT
+	FOREIGN KEY(conversion_revision) REFERENCES winnap.conversion_profiles (conversion_revision) ON DELETE RESTRICT
 );
 
 -- Table: blocks
-CREATE TABLE blocks (
+CREATE TABLE winnap.blocks (
 	generation_id TEXT NOT NULL,
 	block_id TEXT NOT NULL,
 	parent_id TEXT,
@@ -267,16 +269,16 @@ CREATE TABLE blocks (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (generation_id, block_id),
 	CONSTRAINT uq_blocks_origin UNIQUE (generation_id, block_id, artifact_type),
-	CONSTRAINT fk_blocks_parent FOREIGN KEY(generation_id, parent_id) REFERENCES blocks (generation_id, block_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_blocks_parent FOREIGN KEY(generation_id, parent_id) REFERENCES winnap.blocks (generation_id, block_id) ON DELETE RESTRICT,
 	CONSTRAINT ck_blocks_not_own_parent CHECK (parent_id IS NULL OR parent_id <> block_id),
 	CONSTRAINT ck_blocks_order CHECK (reading_order >= 0),
 	CONSTRAINT ck_blocks_origin CHECK (artifact_type IN ('source', 'derived')),
 	CONSTRAINT ck_blocks_draft_only CHECK (publication_state = 'draft'),
-	FOREIGN KEY(generation_id) REFERENCES extraction_generations (generation_id) ON DELETE RESTRICT
+	FOREIGN KEY(generation_id) REFERENCES winnap.extraction_generations (generation_id) ON DELETE RESTRICT
 );
 
 -- Table: chunks
-CREATE TABLE chunks (
+CREATE TABLE winnap.chunks (
 	generation_id TEXT NOT NULL,
 	chunk_id TEXT NOT NULL,
 	title TEXT NOT NULL,
@@ -294,11 +296,11 @@ CREATE TABLE chunks (
 	CONSTRAINT ck_chunks_token_count CHECK (token_count IS NULL OR token_count >= 0),
 	CONSTRAINT ck_chunks_origin CHECK (artifact_type IN ('source', 'derived')),
 	CONSTRAINT ck_chunks_draft_only CHECK (publication_state = 'draft'),
-	FOREIGN KEY(generation_id) REFERENCES extraction_generations (generation_id) ON DELETE RESTRICT
+	FOREIGN KEY(generation_id) REFERENCES winnap.extraction_generations (generation_id) ON DELETE RESTRICT
 );
 
 -- Table: index_jobs
-CREATE TABLE index_jobs (
+CREATE TABLE winnap.index_jobs (
 	run_id TEXT NOT NULL,
 	job_key TEXT NOT NULL,
 	attempt_no INTEGER NOT NULL,
@@ -320,21 +322,21 @@ CREATE TABLE index_jobs (
 	PRIMARY KEY (run_id),
 	CONSTRAINT uq_index_jobs_attempt UNIQUE (job_key, attempt_no),
 	CONSTRAINT uq_index_jobs_scope_run UNIQUE (knowledge_id, run_id),
-	CONSTRAINT fk_index_jobs_generation FOREIGN KEY(generation_id, document_id) REFERENCES extraction_generations (generation_id, document_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_index_jobs_generation FOREIGN KEY(generation_id, document_id) REFERENCES winnap.extraction_generations (generation_id, document_id) ON DELETE RESTRICT,
 	CONSTRAINT ck_index_jobs_counters CHECK (attempt_no >= 1 AND lease_version >= 0),
 	CONSTRAINT ck_index_jobs_generation_document CHECK (generation_id IS NULL OR document_id IS NOT NULL),
 	CONSTRAINT ck_index_jobs_embedding_unavailable CHECK (embedding_profile_id IS NULL),
 	CONSTRAINT ck_index_jobs_times CHECK (finished_at IS NULL OR started_at IS NULL OR finished_at >= started_at),
 	CONSTRAINT ck_index_jobs_stage CHECK (stage IN ('scan', 'collect', 'convert', 'embed', 'publish', 'delete', 'acl_sync')),
 	CONSTRAINT ck_index_jobs_status CHECK (status IN ('queued', 'running', 'succeeded', 'partial', 'failed', 'cancelled')),
-	FOREIGN KEY(knowledge_id) REFERENCES knowledge_bases (knowledge_id) ON DELETE RESTRICT,
-	FOREIGN KEY(document_id) REFERENCES documents (document_id) ON DELETE RESTRICT
+	FOREIGN KEY(knowledge_id) REFERENCES winnap.knowledge_bases (knowledge_id) ON DELETE RESTRICT,
+	FOREIGN KEY(document_id) REFERENCES winnap.documents (document_id) ON DELETE RESTRICT
 );
 
-COMMENT ON COLUMN index_jobs.embedding_profile_id IS 'v1はNULLのみ。Embedding FKは後続';
+COMMENT ON COLUMN winnap.index_jobs.embedding_profile_id IS 'v1はNULLのみ。Embedding FKは後続';
 
 -- Table: artifact_relations
-CREATE TABLE artifact_relations (
+CREATE TABLE winnap.artifact_relations (
 	relation_id TEXT NOT NULL,
 	from_generation_id TEXT NOT NULL,
 	from_block_id TEXT NOT NULL,
@@ -348,15 +350,15 @@ CREATE TABLE artifact_relations (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (relation_id),
-	CONSTRAINT fk_relations_from FOREIGN KEY(from_generation_id, from_block_id) REFERENCES blocks (generation_id, block_id) ON DELETE RESTRICT,
-	CONSTRAINT fk_relations_to FOREIGN KEY(to_generation_id, to_block_id) REFERENCES blocks (generation_id, block_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_relations_from FOREIGN KEY(from_generation_id, from_block_id) REFERENCES winnap.blocks (generation_id, block_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_relations_to FOREIGN KEY(to_generation_id, to_block_id) REFERENCES winnap.blocks (generation_id, block_id) ON DELETE RESTRICT,
 	CONSTRAINT ck_relations_status CHECK (relation_status IN ('confirmed', 'candidate', 'rejected')),
 	CONSTRAINT ck_relations_origin CHECK (origin_type IN ('source', 'derived')),
 	CONSTRAINT ck_relations_draft_only CHECK (publication_state = 'draft')
 );
 
 -- Table: asset_occurrences
-CREATE TABLE asset_occurrences (
+CREATE TABLE winnap.asset_occurrences (
 	occurrence_id TEXT NOT NULL,
 	generation_id TEXT NOT NULL,
 	block_id TEXT NOT NULL,
@@ -368,13 +370,13 @@ CREATE TABLE asset_occurrences (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (occurrence_id),
 	CONSTRAINT uq_asset_occurrences_position UNIQUE (generation_id, block_id, occurrence_order),
-	CONSTRAINT fk_asset_occurrences_block FOREIGN KEY(generation_id, block_id) REFERENCES blocks (generation_id, block_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_asset_occurrences_block FOREIGN KEY(generation_id, block_id) REFERENCES winnap.blocks (generation_id, block_id) ON DELETE RESTRICT,
 	CONSTRAINT ck_asset_occurrences_order CHECK (occurrence_order >= 0),
-	FOREIGN KEY(asset_id) REFERENCES artifact_assets (asset_id) ON DELETE RESTRICT
+	FOREIGN KEY(asset_id) REFERENCES winnap.artifact_assets (asset_id) ON DELETE RESTRICT
 );
 
 -- Table: chunk_blocks
-CREATE TABLE chunk_blocks (
+CREATE TABLE winnap.chunk_blocks (
 	generation_id TEXT NOT NULL,
 	chunk_id TEXT NOT NULL,
 	sequence_no INTEGER NOT NULL,
@@ -387,15 +389,15 @@ CREATE TABLE chunk_blocks (
 	source_slice JSONB NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (generation_id, chunk_id, sequence_no),
-	CONSTRAINT fk_chunk_blocks_chunk FOREIGN KEY(generation_id, chunk_id, artifact_type) REFERENCES chunks (generation_id, chunk_id, artifact_type) ON DELETE RESTRICT,
-	CONSTRAINT fk_chunk_blocks_block FOREIGN KEY(generation_id, block_id, artifact_type) REFERENCES blocks (generation_id, block_id, artifact_type) ON DELETE RESTRICT,
+	CONSTRAINT fk_chunk_blocks_chunk FOREIGN KEY(generation_id, chunk_id, artifact_type) REFERENCES winnap.chunks (generation_id, chunk_id, artifact_type) ON DELETE RESTRICT,
+	CONSTRAINT fk_chunk_blocks_block FOREIGN KEY(generation_id, block_id, artifact_type) REFERENCES winnap.blocks (generation_id, block_id, artifact_type) ON DELETE RESTRICT,
 	CONSTRAINT ck_chunk_blocks_sequence CHECK (sequence_no >= 0),
 	CONSTRAINT ck_chunk_blocks_chunk_range CHECK (chunk_char_start >= 0 AND chunk_char_end > chunk_char_start),
 	CONSTRAINT ck_chunk_blocks_block_range CHECK ((block_char_start IS NULL AND block_char_end IS NULL) OR (block_char_start IS NOT NULL AND block_char_end IS NOT NULL AND block_char_start >= 0 AND block_char_end > block_char_start))
 );
 
 -- Table: chunk_embeddings
-CREATE TABLE chunk_embeddings (
+CREATE TABLE winnap.chunk_embeddings (
 	generation_id TEXT NOT NULL,
 	chunk_id TEXT NOT NULL,
 	embedding_profile_id TEXT NOT NULL,
@@ -405,14 +407,14 @@ CREATE TABLE chunk_embeddings (
 	input_tokens INTEGER NOT NULL,
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (generation_id, chunk_id, embedding_profile_id),
-	FOREIGN KEY(generation_id, chunk_id) REFERENCES chunks (generation_id, chunk_id) ON DELETE CASCADE,
-	FOREIGN KEY(embedding_profile_id, dimensions) REFERENCES embedding_profiles (embedding_profile_id, dimensions),
+	FOREIGN KEY(generation_id, chunk_id) REFERENCES winnap.chunks (generation_id, chunk_id) ON DELETE CASCADE,
+	FOREIGN KEY(embedding_profile_id, dimensions) REFERENCES winnap.embedding_profiles (embedding_profile_id, dimensions),
 	CONSTRAINT ck_chunk_embeddings_tokens CHECK (input_tokens > 0),
 	CONSTRAINT ck_chunk_embeddings_dimensions CHECK (vector_dims(embedding) = dimensions)
 );
 
 -- Table: knowledge_documents
-CREATE TABLE knowledge_documents (
+CREATE TABLE winnap.knowledge_documents (
 	knowledge_id TEXT NOT NULL,
 	document_id TEXT NOT NULL,
 	included BOOLEAN NOT NULL,
@@ -422,14 +424,14 @@ CREATE TABLE knowledge_documents (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (knowledge_id, document_id),
-	CONSTRAINT fk_knowledge_documents_scan FOREIGN KEY(knowledge_id, last_seen_scan_id) REFERENCES index_jobs (knowledge_id, run_id) ON DELETE RESTRICT,
+	CONSTRAINT fk_knowledge_documents_scan FOREIGN KEY(knowledge_id, last_seen_scan_id) REFERENCES winnap.index_jobs (knowledge_id, run_id) ON DELETE RESTRICT,
 	CONSTRAINT ck_knowledge_documents_status CHECK (collection_status IN ('pending', 'available', 'failed', 'excluded')),
-	FOREIGN KEY(knowledge_id) REFERENCES knowledge_bases (knowledge_id) ON DELETE RESTRICT,
-	FOREIGN KEY(document_id) REFERENCES documents (document_id) ON DELETE RESTRICT
+	FOREIGN KEY(knowledge_id) REFERENCES winnap.knowledge_bases (knowledge_id) ON DELETE RESTRICT,
+	FOREIGN KEY(document_id) REFERENCES winnap.documents (document_id) ON DELETE RESTRICT
 );
 
 -- Table: selected_generations
-CREATE TABLE selected_generations (
+CREATE TABLE winnap.selected_generations (
 	knowledge_id TEXT NOT NULL,
 	document_id TEXT NOT NULL,
 	generation_id TEXT,
@@ -437,43 +439,43 @@ CREATE TABLE selected_generations (
 	created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
 	PRIMARY KEY (knowledge_id, document_id),
-	FOREIGN KEY(knowledge_id, document_id) REFERENCES knowledge_documents (knowledge_id, document_id),
-	FOREIGN KEY(generation_id, document_id) REFERENCES extraction_generations (generation_id, document_id),
-	FOREIGN KEY(conversion_revision) REFERENCES conversion_profiles (conversion_revision)
+	FOREIGN KEY(knowledge_id, document_id) REFERENCES winnap.knowledge_documents (knowledge_id, document_id),
+	FOREIGN KEY(generation_id, document_id) REFERENCES winnap.extraction_generations (generation_id, document_id),
+	FOREIGN KEY(conversion_revision) REFERENCES winnap.conversion_profiles (conversion_revision)
 );
 
 -- Deferred foreign keys (document/version circular reference).
 
-ALTER TABLE documents ADD CONSTRAINT fk_documents_latest_version FOREIGN KEY(document_id, latest_source_version) REFERENCES document_versions (document_id, source_version) ON DELETE RESTRICT;
+ALTER TABLE winnap.documents ADD CONSTRAINT fk_documents_latest_version FOREIGN KEY(document_id, latest_source_version) REFERENCES winnap.document_versions (document_id, source_version) ON DELETE RESTRICT;
 
 -- Explicit indexes (PK/UNIQUE indexes are created by constraints above).
 
-CREATE INDEX ix_artifact_relations_from ON artifact_relations (from_generation_id, from_block_id, relation_type);
+CREATE INDEX ix_artifact_relations_from ON winnap.artifact_relations (from_generation_id, from_block_id, relation_type);
 
-CREATE INDEX ix_artifact_relations_to ON artifact_relations (to_generation_id, to_block_id, relation_type);
+CREATE INDEX ix_artifact_relations_to ON winnap.artifact_relations (to_generation_id, to_block_id, relation_type);
 
-CREATE INDEX ix_asset_occurrences_asset ON asset_occurrences (asset_id);
+CREATE INDEX ix_asset_occurrences_asset ON winnap.asset_occurrences (asset_id);
 
-CREATE INDEX ix_blocks_parent_order ON blocks (generation_id, parent_id, reading_order);
+CREATE INDEX ix_blocks_parent_order ON winnap.blocks (generation_id, parent_id, reading_order);
 
-CREATE INDEX ix_chunk_blocks_block ON chunk_blocks (generation_id, block_id, chunk_id);
+CREATE INDEX ix_chunk_blocks_block ON winnap.chunk_blocks (generation_id, block_id, chunk_id);
 
-CREATE INDEX ix_chunk_embeddings_input ON chunk_embeddings (embedding_profile_id, input_hash);
+CREATE INDEX ix_chunk_embeddings_input ON winnap.chunk_embeddings (embedding_profile_id, input_hash);
 
-CREATE INDEX ix_chunks_publication ON chunks (generation_id, publication_state, artifact_type);
+CREATE INDEX ix_chunks_publication ON winnap.chunks (generation_id, publication_state, artifact_type);
 
-CREATE INDEX ix_document_versions_asset ON document_versions (asset_id);
+CREATE INDEX ix_document_versions_asset ON winnap.document_versions (asset_id);
 
-CREATE INDEX ix_index_jobs_queue ON index_jobs (status, stage, created_at);
+CREATE INDEX ix_index_jobs_queue ON winnap.index_jobs (status, stage, created_at);
 
-CREATE UNIQUE INDEX uq_index_jobs_active ON index_jobs (job_key) WHERE status IN ('queued', 'running');
+CREATE UNIQUE INDEX uq_index_jobs_active ON winnap.index_jobs (job_key) WHERE status IN ('queued', 'running');
 
-CREATE INDEX ix_knowledge_documents_document ON knowledge_documents (document_id, included);
+CREATE INDEX ix_knowledge_documents_document ON winnap.knowledge_documents (document_id, included);
 
-CREATE INDEX ix_selected_generations_generation ON selected_generations (generation_id);
+CREATE INDEX ix_selected_generations_generation ON winnap.selected_generations (generation_id);
 
 -- Required for require_schema() and init-db replay. Business tables remain empty.
-INSERT INTO schema_migrations (version, applied_at, created_at)
+INSERT INTO winnap.schema_migrations (version, applied_at, created_at)
 VALUES (3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
 
 COMMIT;

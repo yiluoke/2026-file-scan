@@ -33,11 +33,14 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.schema import CreateSchema
 from pgvector.sqlalchemy import Vector
+
+from file_scan.namespace import APPLICATION_SCHEMA, connection_arguments, database_schema
 
 SCHEMA_VERSION = 3
 
-metadata = MetaData()
+metadata = MetaData(schema=APPLICATION_SCHEMA)
 # SQLiteでも同じCore APIを使う。PostgreSQLでは04のJSONB・text[]に対応する。
 _JSON = JSON().with_variant(JSONB(), "postgresql")
 _TEXT_ARRAY = JSON().with_variant(ARRAY(Text()), "postgresql")
@@ -435,10 +438,10 @@ Index("ix_selected_generations_generation", selected_generations.c.generation_id
 _active_job = index_jobs.c.status.in_(("queued", "running"))
 Index("uq_index_jobs_active", index_jobs.c.job_key, unique=True, postgresql_where=_active_job, sqlite_where=_active_job)
 
-tables: dict[str, Table] = dict(metadata.tables)
+tables: dict[str, Table] = {table.name: table for table in metadata.tables.values()}
 
 
-def open_database(url: str) -> Engine:
+def open_database(url: str, *, schema: str = APPLICATION_SCHEMA) -> Engine:
     """Engineを作る。接続確認やマイグレーションは呼び出し側が明示的に行う。
 
     PostgreSQLの省略URLはpsycopg 3を使う。SQLiteはテスト・ローカル検証用で、
@@ -449,7 +452,10 @@ def open_database(url: str) -> Engine:
         raise ValueError("対応DBはPostgreSQLまたはSQLiteです")
     if parsed.drivername == "postgresql":
         parsed = parsed.set(drivername="postgresql+psycopg")
-    engine = create_engine(parsed)
+    target = None if parsed.get_backend_name() == "sqlite" else schema
+    arguments = {} if target is None else connection_arguments(schema)
+    engine = create_engine(parsed, connect_args=arguments, execution_options={
+        "schema_translate_map": {APPLICATION_SCHEMA: target}})
     if parsed.get_backend_name() == "sqlite":
         @event.listens_for(engine, "connect")
         def _sqlite_connect(dbapi_connection, _connection_record):
@@ -480,7 +486,15 @@ def migrate(engine: Engine) -> None:
             # 同時起動したバッチどうしの初期DDLを直列化するトランザクションロック。
             # 旧v1の初期化とも同じキーで排他する。スキーマ版をロックキーに使わない。
             connection.execute(text("SELECT pg_advisory_xact_lock(:namespace, :version)"), {"namespace": 20261018, "version": 1})
-        existing = set(inspect(connection).get_table_names())
+            target = database_schema(connection)
+            # 旧public配置を黙って空の新規DBとして扱わない。移動は専用コマンドで行う。
+            target_tables = set(inspect(connection).get_table_names(schema=target))
+            if target == APPLICATION_SCHEMA and not set(tables) <= target_tables:
+                legacy = set(inspect(connection).get_table_names(schema="public")) & set(tables)
+                if legacy:
+                    raise RuntimeError("publicに旧取込テーブルがあります。先に scripts/migrate_postgres_schema.py でwinnapへ移行してください")
+            connection.execute(CreateSchema(target, if_not_exists=True))
+        existing = set(inspect(connection).get_table_names(schema=database_schema(connection)))
         managed = set(tables) - {"schema_migrations"}
         versions = []
         if "schema_migrations" in existing:
@@ -508,16 +522,17 @@ def migrate(engine: Engine) -> None:
                 raise RuntimeError("先に対象DBでCREATE EXTENSION vectorを実行してください")
         # PostgreSQLの後付けFK生成はSQLAlchemy内の作成規則を書き換え得る。
         # 公開するmetadataを保持し、同一プロセスの別DBでも同じ定義を使えるよう複製する。
-        migration_metadata = MetaData()
+        migration_metadata = MetaData(schema=APPLICATION_SCHEMA)
         for table in tables.values():
             table.to_metadata(migration_metadata)
+        migration_tables = {table.name: table for table in migration_metadata.tables.values()}
         # SQLAlchemyのto_metadataは条件付きDDLの指定を複製しないため再設定する。
         for name in ("chunk_embeddings", "embedding_cache"):
-            for constraint in migration_metadata.tables[name].constraints:
+            for constraint in migration_tables[name].constraints:
                 if constraint.name == f"ck_{name}_dimensions":
                     constraint.ddl_if(dialect="postgresql")
         if versions in ([1], [2]):
-            migration_metadata.create_all(connection, tables=[migration_metadata.tables[name]
+            migration_metadata.create_all(connection, tables=[migration_tables[name]
                                                              for name in sorted(added)])
             for index in chunk_embeddings.indexes:
                 index.create(connection, checkfirst=True)

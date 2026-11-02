@@ -135,7 +135,7 @@ PGroongaを導入しない取り込み専用環境は、その2行だけ省略�
 ```sh
 cd /opt/file-scan/app
 psql -h 127.0.0.1 -U file_scan -d file_scan -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v3.sql
-psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT version FROM schema_migrations;"
+psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT version FROM winnap.schema_migrations;"
 psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector', 'pgroonga');"
 ```
 

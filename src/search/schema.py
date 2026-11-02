@@ -1,4 +1,4 @@
-"""検索用の独立スキーマ。取り込みv3のmetadata・制約・版を変更しない。"""
+"""winnap内の検索用metadata。取り込みv3と管理版・定義を分離する。"""
 
 from datetime import datetime, timezone
 
@@ -24,8 +24,9 @@ from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 
 from file_scan.db import tables as ingestion
 from file_scan.pipeline import require_schema
+from file_scan.namespace import APPLICATION_SCHEMA, database_schema
 
-metadata = MetaData()
+metadata = MetaData(schema=APPLICATION_SCHEMA)
 
 
 def now():
@@ -172,15 +173,16 @@ def migrate(engine):
         )
         if available != {"vector", "pgroonga"}:
             raise RuntimeError("vectorとpgroonga拡張を先に有効化してください")
-        existing = set(inspect(c).get_table_names())
+        existing = set(inspect(c).get_table_names(schema=database_schema(c)))
+        managed = {table.name for table in metadata.tables.values()}
         if versions.name in existing:
             if (
                 list(c.execute(select(versions.c.version)).scalars()) != [1]
-                or set(metadata.tables) - existing
+                or managed - existing
             ):
                 raise RuntimeError("検索スキーマと適用版が一致しません")
             return
-        if set(metadata.tables) & existing:
+        if managed & existing:
             raise RuntimeError("未管理の検索テーブルがあります")
         metadata.create_all(c)
         c.exec_driver_sql(

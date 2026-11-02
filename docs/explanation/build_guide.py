@@ -38,12 +38,12 @@ PAGES = [
  cards=[("この資料でわかること", ["種類ごとに何をどう読み取るか。", "本文・表を、どう分割するか。", "どの文章をベクトル化し、どこに保存するか。"]),
  ("まず覚える3つの言葉", ["ブロック：段落・表など、原本のひとまとまり。", "チャンク：検索・ベクトル化に使う小さな文章。", "Embedding：文章の意味を数値の列で表す処理。"]),
  ("読む順番", ["全体像・対応形式：2～3ページ。", "形式ごとの図解：4～8ページ。", "分割・ベクトル化・保存・運用：9～14ページ。"] )],
- note="確認基準：2026-11-01／文書取込に限定した修正版。値は同梱設定・コードの既定値。図中の業務内容と数値ベクトルは説明用です。", sources=["README.md", "src/file_scan/domain.py:16", "config.example.yaml"]),
+ note="確認基準：2026-11-02／専用スキーマwinnap対応版。値は同梱設定・コードの既定値。図中の業務内容と数値ベクトルは説明用です。", sources=["README.md", "src/file_scan/domain.py:16", "config.example.yaml"]),
  dict(title="全体像：取込とベクトル化は別の処理", tag="01 / 全体の流れ", lead="ingest はローカルで抽出・分割し、embed が抽出済みの検索用テキストをOpenAI APIへ送信します。", diagram="pipeline",
  cards=[("1. 対象を決めて保管", ["指定フォルダを列挙し、拡張子・除外規則で絞ります。", "原本全体のSHA-256で変更を確認。原本コピーは内容ハッシュで保管します。", "共有元のファイルは変更しません。"]),
  ("2. 読み取り・整理", ["形式別の解析器が、本文・表・位置を抽出します。", "ブロックを小さなチャンクへ分割し、DBに下書き保存します。", "画像実体は保存しますが、画像の文字・意味はまだ解析しません。"]),
  ("3. 意味を数値にする", ["embed が選択中の世代のチャンクを対象にします。", "同じモデル・入力の保存済みベクトルは再利用します。", "新しい入力だけをAPIへ送り、pgvectorに保存します。"] )],
- note="ingest と embed の実行だけでは検索公開されません。公開は検索側の file-search publish で別途行います。", sources=["src/file_scan/pipeline.py:405", "src/file_scan/embeddings.py:121", "docs/implementation/search-api.md"]),
+ note="ingest と embed の実行だけでは検索公開されません。公開は検索側の file-search publish で別途行います。", sources=["src/file_scan/pipeline.py:406", "src/file_scan/embeddings.py:121", "docs/implementation/search-api.md"]),
  dict(title="対応する文書と、解析の入口", tag="02 / 対応形式の早見表", lead="OfficeやPDFを一律に画像化せず、文字・セル・構造を読み取れる形式では、その情報を直接利用します。",
  table=(["種類", "読み取り方式", "検索用テキストになるもの", "原本へ戻る手掛かり"], [
  ["TXT / MD", "文字コードを判定して読込", "段落／MDの見出しの文脈", "開始・終了行"],
@@ -83,22 +83,22 @@ PAGES = [
  cards=[("何を単位に分けるか", ["章節・親要素・由来の違うブロックを安易に混ぜません。", "本文は既定1,800文字以内。長い本文は改行等を優先して分割します。", "固定幅の重なりを入れる実装ではありません。"]),
  ("トークンも測る", ["トークンはモデルが読む小さな文字片。文字数とは異なります。", "cl100k_baseで、文脈を含む入力全体を実測します。既定上限は8,191です。", "文脈は既定1,024トークン以内、かつ全体予算の半分以下です。"]),
  ("表と原本対応を守る", ["表は行の境界を優先。1行が長すぎる場合は分割し、警告します。", "長すぎる検索文脈は省略を記録し、本文の続きを別チャンクに残します。", "chunk_blocksに原文とチャンクの文字範囲を保存して一致を検査します。"] )],
- note="content_text＝チャンク本文。search_text＝文脈＋本文。Embeddingへ送るのはsearch_textです。", sources=["src/file_scan/chunking.py:14", "src/file_scan/chunking.py:30", "src/file_scan/tokens.py", "src/file_scan/pipeline.py:238"]),
+ note="content_text＝チャンク本文。search_text＝文脈＋本文。Embeddingへ送るのはsearch_textです。", sources=["src/file_scan/chunking.py:14", "src/file_scan/chunking.py:30", "src/file_scan/tokens.py", "src/file_scan/pipeline.py:239"]),
  dict(title="ベクトル化：文章の意味を、数値の列へ変える", tag="10 / OpenAI Embedding", lead="既定ではtext-embedding-3-smallを使い、1つのsearch_textから1,536個の数値を得ます。全文書形式で共通の処理です。", diagram="vector",
  cards=[("どの文章を送るか", ["原本・収集状態・選択世代・変換設定が一致する、下書きチャンクです。", "処理状態succeededとpartialが対象。failed・stale等は対象にしません。", "実APIへ送る前に、入力が1～8,191トークン内か再検査します。"]),
  ("どう呼び出すか", ["DB読込は既定128件ずつ。APIへは既定16入力ずつ送ります。", "1要求の合計トークンも制限します。同時API要求は1つです。", "同じ入力はキャッシュや要求内のまとめ処理で再利用します。"]),
  ("どう保存するか", ["応答の件数・順序・次元数・有限数・非ゼロを確認します。", "モデル等のプロファイルと入力ハッシュを付け、pgvectorに保存します。", "質問も同じモデル・次元で数値化すると、意味の近さを比較できます。"] )],
  note="同梱設定はembedding.enabled=false。図の座標は概念図、数値は架空です。近さは関連性の手掛かりであり、正しさの保証ではありません。", sources=["src/file_scan/embeddings.py:69", "src/file_scan/embeddings.py:121", "src/file_scan/config.py:40", "src/search/service.py"]),
- dict(title="保存：原本、抽出結果、ベクトルをつなぐ", tag="11 / 保存先と根拠の追跡", lead="原本と画像のバイト列はファイル保管先へ。抽出本文・構造・原本位置・ベクトルはDBへ保存します。", diagram="storage",
+ dict(title="保存：原本、抽出結果、ベクトルをつなぐ", tag="11 / 保存先と根拠の追跡", lead="原本と画像はファイル保管先へ。抽出本文・構造・位置・ベクトルは、DBの専用スキーマwinnapへ保存します。", diagram="storage",
  cards=[("ファイルとして保存", ["artifacts/storage：同梱設定の原本コピー・抽出画像。内容ハッシュで管理します。", "DBには実体参照を保存します。DBと保管先を一緒に扱います。", "storage_dirは1つのDBの初回登録先に固定されます。"]),
- ("DBに保存", ["documents / document_versions：文書の識別と原本の版。", "blocks / chunks / chunk_blocks：構造・検索用本文・文字対応。", "chunk_embeddings：チャンクのベクトル。embedding_profiles：モデル等の条件。"]),
+ ("DBに保存", ["winnap内のdocuments / document_versions：文書の識別と原本の版。", "blocks / chunks / chunk_blocks：構造・検索用本文・文字対応。", "chunk_embeddings：チャンクのベクトル。embedding_profiles：モデル等の条件。"]),
  ("人が確認する出力", ["manifest.json：処理状態・件数等。document.json：ブロック・位置・画像参照。", "chunks.jsonl：検索用テキスト。review.md：抽出内容の確認用。", "generations/<世代ハッシュ>/に出力。編集してもDBには逆反映されません。"] )],
- note="出典追跡は「チャンク→原本ブロック→原本位置→保管原本」。位置の精度は形式ごとに異なります。", sources=["src/file_scan/db.py", "src/file_scan/pipeline.py:282", "src/file_scan/pipeline.py:353", "config.example.yaml"]),
+ note="取込・検索の表はwinnap内。pgvectorの型・関数はpublic。チャンクから原本ブロック・位置・保管原本へ戻れます。", sources=["src/file_scan/db.py", "src/file_scan/namespace.py", "docs/implementation/winnap-schema.md", "src/file_scan/pipeline.py:283", "src/file_scan/pipeline.py:354", "config.example.yaml"]),
  dict(title="再実行：変わった段階だけ、やり直す", tag="12 / 世代とキャッシュ", lead="原本、抽出条件、分割条件、Embedding入力を分けて識別し、同じ結果を再利用します。過去の履歴も保持します。", diagram="reuse",
  cards=[("原本が同じ", ["変更確認では毎回、共有元を全文ハッシュします。", "同じ原本・同じ変換設定なら既存世代を再利用します。", "mtime・サイズだけで同一とは判断しません。ネットワーク読込は残ります。"]),
  ("分割条件だけが変わった", ["抽出キャッシュからブロックを読み、新たな分割条件を適用します。", "画像参照・キャッシュの整合性も検査します。", "モデルやパーサーの変更なら、該当する抽出もやり直します。"]),
  ("Embeddingをやり直す", ["モデル・次元・入力版が同じでsearch_textも同じなら再送しません。", "成功済みバッチを残し、失敗後は未完了の入力から再開できます。", "選択中世代を明示管理し、失敗時に古い世代へ自動で戻りません。"] )],
- note="同じ条件で部分抽出をやり直す指定は ingest --retry-partial。変更のない通常再実行ではpartialも再利用されます。", sources=["src/file_scan/profiles.py:18", "src/file_scan/profiles.py:49", "src/file_scan/pipeline.py:405", "docs/design/05-ingestion-improvements.md"]),
+ note="同じ条件で部分抽出をやり直す指定は ingest --retry-partial。変更のない通常再実行ではpartialも再利用されます。", sources=["src/file_scan/profiles.py:18", "src/file_scan/profiles.py:49", "src/file_scan/pipeline.py:406", "docs/design/05-ingestion-improvements.md"]),
  dict(title="運用：どこまで終わったかを確認する", tag="13 / 実行順序と状態", lead="準備済みのPython環境・DB・モデル・設定を前提に、棚卸し→取込→抽出確認→ベクトル化→状態確認の順に進めます。",
  table=(["順序", "コマンド例（設定ファイルはconfig.local.yaml）", "確認すること"], [
  ["1", "file-scan scan --config config.local.yaml", "対象・除外・列挙エラー。DB登録しない"],
@@ -109,7 +109,7 @@ PAGES = [
  ["6", "file-scan status --config config.local.yaml", "現在の世代状態・ready / pending / total"],
  ]),
  bottom="succeeded＝品質警告・画像待ちなし、partial＝警告または画像待ちあり、failed＝失敗。これらは処理状態です。draft（下書き）は別の公開状態です。終了コードは0：正常、1：実行全体のエラー、2：部分完了。",
- note="資料作成では実API呼出・業務データ取込・DB変更・公開を行っていません。.envはCLIが自動読込しません。", sources=["src/file_scan/cli.py", "src/file_scan/domain.py:61", "docs/implementation/first-version.md", "docs/implementation/openai-embedding.md"]),
+ note="資料作成では実API呼出・業務データ取込・業務DB移行・公開を行っていません。.envはCLIが自動読込しません。", sources=["src/file_scan/cli.py", "src/file_scan/domain.py:61", "docs/implementation/first-version.md", "docs/implementation/openai-embedding.md"]),
  dict(title="設計書を読むときの注意：現状と将来構想", tag="14 / 実装との照合結果", lead="設計書には目標構成や古い時点の記述も含まれます。本資料は現在のプログラムと、後から追加された実装資料を優先しています。",
  table=(["論点", "設計上の記述・構想", "現在のプログラム"], [
  ["画像OCR・説明", "外部APIで文字と意味を取得する方針", "未実装。実体・位置・解析待ちを保存"],
@@ -123,7 +123,7 @@ PAGES = [
  note="「警告がない」ことは、原本内容を100%正しく理解できたという意味ではありません。実物との照合は引き続き必要です。", sources=["docs/design/01-document-conversion.md", "docs/design/05-ingestion-improvements.md", "docs/implementation/search-api.md", "src/search/management.py:116", "src/file_scan/workers.py"]),
  dict(title="根拠資料と、プログラムの読み順", tag="15 / 保守担当者向けの参照先", lead="業務担当者は図解から、保守担当者は以下のファイルから実装の詳細へ進めます。本文各ページの下部にも参照先を記載しました。",
  table=(["知りたいこと", "主な確認先（プロジェクトルート基準）"], [
- ["入口・全体の進行", "src/file_scan/ 内：cli.py / pipeline.py:405"],
+ ["入口・全体の進行", "src/file_scan/ 内：cli.py / pipeline.py:406"],
  ["形式別の解析", "src/file_scan/parsers.py：112（TXT・MD）、232（Excel）"],
  ["Word・PDFの解析", "src/file_scan/parsers.py：509（Word）、750（Docling）、683（native PDF）"],
  ["分割・トークン・ベクトル", "src/file_scan/ 内：chunking.py:30 / tokens.py / embeddings.py:121"],
@@ -131,8 +131,8 @@ PAGES = [
  ["設計・運用", "docs/design/01-document-conversion.md / 05-ingestion-improvements.md"],
  ["操作と検索公開", "docs/implementation/first-version.md / openai-embedding.md / search-api.md"],
  ]),
- bottom="今回の確認：全体テスト160件が成功、実DB接続が必要な46件はスキップ。文書の抽出・分割・再取込、対象外形式の拒否、Docling実モデルを確認しました。実OpenAI API・実PostgreSQL、検索精度・処理性能の測定は今回の範囲外です。",
- note="確認日：2026-11-01／基準コミットc482b66から取込範囲を修正した作業ツリー。プログラム・設定・設計書も更新済み。", sources=["tests/test_collection.py", "tests/test_parsers.py", "tests/test_pipeline.py"]),
+ bottom="今回の確認：実PostgreSQL・pgvector・PGroongaを使った全218テストが成功（スキップなし）。文書取込・検索・Docling実モデルと、スキーマ移行時のデータ保持・rollbackを検証しました。実OpenAI API送信・業務データ移行・検索精度の測定は未実施です。",
+ note="確認日：2026-11-02／文書取込・専用スキーマwinnapに対応した作業ツリー。既存の業務DB移行は専用手順で行います。", sources=["tests/test_collection.py", "tests/test_parsers.py", "tests/test_pipeline.py"]),
 ]
 
 
@@ -235,7 +235,7 @@ def diagram(kind):
         dtext(d,555,3,"2次元の概念図・実測値ではありません",9,MUTED)
         return d
     if kind=="storage":
-        return flow([("ファイル保管先",["原本コピー・画像のバイト列", "内容ハッシュで保管", "artifacts/storage"]),("DB：本文と対応関係",["チャンク → ブロック", "→ 原本位置 → 原本参照", "ベクトルもチャンクに対応"]),("確認用出力",["document.json / chunks.jsonl", "manifest.json / review.md", "artifacts/reports"])])
+        return flow([("ファイル保管先",["原本コピー・画像のバイト列", "内容ハッシュで保管", "artifacts/storage"]),("DB：winnap内の表",["チャンク → ブロック", "→ 原本位置 → 原本参照", "ベクトルもチャンクに対応"]),("確認用出力",["document.json / chunks.jsonl", "manifest.json / review.md", "artifacts/reports"])])
     if kind=="reuse":
         return flow([("抽出の再利用",["原本ハッシュ", "+ 形式別の抽出条件", "→ 抽出キャッシュ"]),("世代・分割の再利用",["文書ID + 原本版", "+ 抽出・分割条件", "→ 変換世代とチャンク"]),("ベクトルの再利用",["モデル・次元・入力版", "+ search_textのハッシュ", "→ 保存済みベクトル"])])
     raise ValueError(kind)
@@ -284,7 +284,7 @@ def build():
     C=canvas.Canvas(str(PDF),pagesize=(W,H))
     C.setTitle("ファイル取込処理 図解ガイド");C.setAuthor("2026-file-scan")
     C.setSubject("現行設計とプログラムに基づく、形式別解析・チャンク化・Embeddingの説明")
-    md=["# ファイル取込処理 図解ガイド\n", "確認日：2026-11-01／基準コミット`c482b66`から文書取込に限定した修正版。初めて読む方向けの説明資料です。\n", "[図解PDFを開く](../../output/pdf/ファイル取込処理_図解ガイド.pdf)\n", "図中の業務内容・数値ベクトル・座標は説明用です。設定値は同梱設定とコードの既定値を示し、実行環境の設定値を保証するものではありません。\n", "## 目次\n"]
+    md=["# ファイル取込処理 図解ガイド\n", "確認日：2026-11-02／文書取込と専用スキーマ`winnap`に対応した修正版。初めて読む方向けの説明資料です。\n", "[図解PDFを開く](../../output/pdf/ファイル取込処理_図解ガイド.pdf)\n", "図中の業務内容・数値ベクトル・座標は説明用です。設定値は同梱設定とコードの既定値を示し、実行環境の設定値を保証するものではありません。\n", "## 目次\n"]
     md += [f"{i}. {p['title']}" for i,p in enumerate(PAGES,1)]
     md.append("")
     bounds=[]

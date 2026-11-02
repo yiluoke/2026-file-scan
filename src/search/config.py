@@ -10,6 +10,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from file_scan.config import ConfigError, load_config
+from file_scan.namespace import APPLICATION_SCHEMA, connection_arguments
 
 
 @dataclass(frozen=True)
@@ -50,16 +51,20 @@ def load_search_settings(path):
     return SearchSettings(settings, key, test_mode=test_mode)
 
 
-def async_database(url, **kwargs):
+def async_database(url, *, schema=APPLICATION_SCHEMA, **kwargs):
     parsed = make_url(url)
     if parsed.get_backend_name() != "postgresql":
         raise ConfigError("検索APIにはPostgreSQLが必要です")
-    connection_options = {"connect_timeout": 1} | kwargs.pop("connect_args", {})
+    connection_options = connection_arguments(
+        schema, {"connect_timeout": 1} | kwargs.pop("connect_args", {}))
+    execution_options = kwargs.pop("execution_options", {}) | {
+        "schema_translate_map": {APPLICATION_SCHEMA: schema}}
     return create_async_engine(
         parsed.set(drivername="postgresql+psycopg"),
         pool_size=4,
         max_overflow=0,
         pool_timeout=1,
         connect_args=connection_options,
+        execution_options=execution_options,
         **kwargs,
     )

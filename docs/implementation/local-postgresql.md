@@ -3,6 +3,7 @@
 ローカル検証も PostgreSQL 18＋pgvector 0.8.6 を使用する。実際の本番の採用版が決まったら、ローカルのバージョンも合わせる。macOSではPostgres.app、Dockerを導入済みの環境ではComposeを利用できる。同じ5432番ポートを使うため、どちらか一方を起動する。
 
 - アプリ用DB：`file_scan`
+- アプリテーブルのスキーマ：`winnap`（取込・検索とも共通。pgvectorはpublic）
 - テスト専用DB：`file_scan_test`
 - ユーザー：`file_scan`（ローカル開発専用の管理ユーザー）
 - 接続先：`127.0.0.1:5432`（SCRAMパスワード認証）
@@ -83,6 +84,8 @@ docker compose exec db psql -U file_scan -d file_scan_test -v ON_ERROR_STOP=1 -c
 ## PGroonga
 
 2026-10-25に、ネイティブのPostgreSQL 18.6とpgvector 0.8.6へPGroonga 4.1.0を追加した。新しいネイティブ環境では[PGroonga導入手順](pgroonga.md)で実行時ライブラリ・DBごとの拡張検索パスと有効化を設定してから、以下の全テストを実行する。既存ComposeイメージにはPGroongaを含めていない。
+
+既存のpublic配置は[専用スキーマへの移行](winnap-schema.md)を行ってから、新版のCLIを使用する。
 
 ## アプリと実DBの検証
 

@@ -6,6 +6,8 @@
 
 すべてのコマンドは、配布したプロジェクトのルート（`pyproject.toml`と`compose.yaml`がある場所）で実行する。OS固有の箇所以外は、仮想環境を有効にした後の`python`・`file-scan`を使用する。
 
+2026-11-02更新：アプリテーブルの配置先は専用スキーマ`winnap`。pgvectorはpublicに配置する。既存public配置を継続使用する場合は[スキーマ移行](winnap-schema.md)を先に行う。
+
 ## 1. 導入構成と準備するもの
 
 | 項目 | 使用するもの・確認事項 |
@@ -231,7 +233,7 @@ docker compose exec -T db psql -U file_scan -d file_scan -v ON_ERROR_STOP=1 -f /
 psql -h DB_HOST -p 5432 -U file_scan -d file_scan -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v3.sql
 ```
 
-作成先は`public`。同名の管理テーブルがある場合は停止する。複数文を最後まで実行し、`COMMIT`できたことを確認する。既存v1/v2を更新する場合は新規SQLを再実行せず、次のコマンドを使う。
+作成先は専用スキーマ`winnap`。同名の管理テーブルがある場合は停止する。複数文を最後まで実行し、`COMMIT`できたことを確認する。既存v1/v2を更新する場合は新規SQLを再実行せず、次のコマンドを使う。
 
 ```sh
 file-scan init-db --config config.local.yaml
@@ -246,8 +248,8 @@ file-scan init-db --config config.local.yaml
 Dockerの例。外部DBの場合は同じSQLをホストのpsqlで実行する。
 
 ```sh
-docker compose exec -T db psql -U file_scan -d file_scan -c "SELECT version FROM schema_migrations;"
-docker compose exec -T db psql -U file_scan -d file_scan -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';"
+docker compose exec -T db psql -U file_scan -d file_scan -c "SELECT version FROM winnap.schema_migrations;"
+docker compose exec -T db psql -U file_scan -d file_scan -c "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'winnap' AND table_type = 'BASE TABLE';"
 file-scan status --config config.local.yaml
 ```
 

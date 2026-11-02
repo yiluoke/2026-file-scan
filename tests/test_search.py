@@ -93,7 +93,7 @@ def search_db(tmp_path, postgres_database, monkeypatch):
 
     def client_factory(config=config, embedder=embedder, allow_history=False):
         engine = async_database(
-            postgres_database.url, connect_args={"options": f"-c search_path={namespace},public"}
+            postgres_database.url, schema=namespace
         )
         return TestClient(
             create_app(config, engine=engine, embedder=embedder, allow_history=allow_history)
@@ -456,7 +456,7 @@ def test_disconnect_cancels_embedding_and_releases_connections(search_db):
                 cancelled.set()
 
         asynchronous = async_database(
-            engine.url, connect_args={"options": f"-c search_path={namespace},public"}
+            engine.url, schema=namespace
         )
         app = create_app(
             SearchSettings(settings, "search-test-key"), engine=asynchronous, embedder=slow

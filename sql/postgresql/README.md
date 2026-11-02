@@ -2,16 +2,18 @@
 
 Python・ライブラリ・DBサーバー・モデルを含む導入全体は[環境構築手順](../../docs/implementation/environment-setup.md)を参照する。
 
-[schema-v3.sql](schema-v3.sql)は、現在実装されている20テーブル、PK・UNIQUE・CHECK・外部キー、12個の明示索引を作成する。`pgvector`の有効化と`schema_migrations`へのv3適用記録も含む。設計案だけの検索API・リリース・ACL表は含めない。
+[schema-v3.sql](schema-v3.sql)は、現在実装されている20テーブル、PK・UNIQUE・CHECK・外部キー、12個の明示索引を作成する。`pgvector`の有効化と`schema_migrations`へのv3適用記録も含む。検索専用のsearch_*テーブルと将来のACL表は含めない。検索表はfile-search init-dbで同じwinnap内に作成する。
 
 正本は[src/file_scan/db.py](../../src/file_scan/db.py)。このSQLは[scripts/export_postgres_schema.py](../../scripts/export_postgres_schema.py)で実装定義から生成する。文書データ・原本・画像・APIキー・DBユーザー・パスワードは含めない。
+
+2026-11-02：アプリテーブルの作成先を専用スキーマ`winnap`へ変更した。取込・検索の配置と旧`public`からの移行は[専用スキーマの手順](../../docs/implementation/winnap-schema.md)を参照。
 
 ## 導入手順
 
 検証環境はPostgreSQL 18.6／pgvector 0.8.6。別の版を使用する場合は、その環境でも実行確認する。
 
 1. 導入先のPostgreSQLサーバーにpgvector拡張のパッケージを配置する。
-2. 導入先のDBと接続ユーザーを用意する。ユーザーには`public`へのテーブル作成権限が必要。拡張の作成権限がない場合は、管理者が対象DBで先に`CREATE EXTENSION vector WITH SCHEMA public;`を実行する。
+2. 導入先のDBと接続ユーザーを用意する。ユーザーには`winnap`スキーマの作成権限、または管理者が作成済みの`winnap`に対する`USAGE`・`CREATE`権限が必要。拡張の作成権限がない場合は、管理者が対象DBで先に`CREATE EXTENSION vector WITH SCHEMA public;`を実行する。
 3. リポジトリのルートから次を実行する。接続情報は導入先の値へ置き換える。認証にはパスワード入力・`.pgpass`等を使い、SQLに認証情報を書かない。
 
 ```sh
@@ -19,9 +21,9 @@ psql -h DB_HOST -p 5432 -U DB_USER -d FILE_SCAN_DB \
   -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v3.sql
 ```
 
-SQLは`BEGIN`～`COMMIT`で実行する。同名の管理テーブルがある場合はエラーにし、既存構造の違いを隠す`CREATE TABLE IF NOT EXISTS`は使用しない。既存v1/v2のDBを更新する場合は、このSQLではなく`file-scan init-db --config 設定ファイル`を使う。テーブル削除・既存データ削除は行わない。
+SQLは`BEGIN`～`COMMIT`で実行する。同名の管理テーブルがある場合はエラーにし、既存構造の違いを隠す`CREATE TABLE IF NOT EXISTS`は使用しない。`winnap`内の既存v1/v2を更新する場合は、このSQLではなく`file-scan init-db --config 設定ファイル`を使う。既存の`public`配置は先に専用手順で移行し、旧v1/v2なら旧配置に対応する配布版でv3へ更新してから移行する。テーブル削除・既存データ削除は行わない。
 
-標準の作成先は`public`。pgvectorも`public`に配置する。DBに拡張ファイルが未導入の場合、`CREATE EXTENSION`だけではインストールできない。既存のvector拡張が別schemaにある場合、このSQLは停止する。
+標準の作成先は`winnap`。SQLがスキーマを作成し、全アプリテーブル・FKを`winnap`で修飾する。pgvectorは引き続き`public`に配置する。DBに拡張ファイルが未導入の場合、`CREATE EXTENSION`だけではインストールできない。既存のvector拡張が別schemaにある場合、このSQLは停止する。
 
 ## アプリへの接続
 
@@ -34,7 +36,7 @@ file-scan ingest --config config.local.yaml
 
 初期状態は管理版3だけが登録され、文書は0件。`init-db`を続けて実行しても適用済みとして扱える。`ingestion_settings.storage_root`はこのSQLでは設定せず、最初のingestで新環境の保管先を登録する。
 
-現行アプリの通常のsearch_pathで`public`の表を解決できることを確認する。SQL中の`SET LOCAL search_path`は導入トランザクション内だけに適用される。検索公開・ACL同期は現行と同じく無効／draftの制約を維持する。
+アプリの同期・非同期接続は`search_path=winnap,public`を設定し、テーブルも`winnap`で明示修飾する。SQL中の`SET LOCAL search_path`は導入トランザクション内だけに適用される。検索公開・ACL同期は現行と同じく無効／draftの制約を維持する。
 
 ## 作成テーブル
 
