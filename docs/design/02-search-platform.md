@@ -1,5 +1,7 @@
 # 検索基盤・検索API設計
 
+日本語スキャンPDFのOCR本文はRapidOCR＋ONNX Runtime CPUで抽出したsourceとして、既存の全文・ベクトル検索経路へ渡す。文字認識誤りはEmbeddingで補正されない。原本ページ・bboxを根拠として保持する。図の意味説明・Office画像OCRは未実装。実装は[日本語OCR](../implementation/rapidocr-pdf.md)を参照。
+
 - 作成日: 2026-10-12
 - 最終更新日: 2026-11-01
 - 状態: ローカル試作の検索API・公開管理は実装済み。文書ACL・Dify本体は後続

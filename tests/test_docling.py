@@ -9,6 +9,7 @@ from reportlab.pdfgen import canvas
 
 from file_scan import parsers
 from file_scan.chunking import build_chunks
+from file_scan.config import PdfOcrSettings
 from file_scan.parsers import ParserDependencyError, parse_file
 from test_parsers import PNG
 
@@ -23,7 +24,8 @@ def converted():
         pytest.skip("先にpython scripts/download_docling_models.pyを実行")
     if not all((PDFS / name).is_file() for name in ("dummy.pdf", "table.pdf")):
         pytest.skip("先にpython scripts/download_samples.pyを実行")
-    return {name: parse_file(PDFS / name, "pdf", docling_artifacts_path=MODELS)
+    return {name: parse_file(PDFS / name, "pdf", docling_artifacts_path=MODELS,
+                             pdf_ocr=PdfOcrSettings(enabled=False))
             for name in ("dummy.pdf", "table.pdf")}
 
 
@@ -75,7 +77,8 @@ def test_real_docling_preserves_scan_image_and_reports_ocr_pending(tmp_path, con
     pdf.showPage()
     pdf.drawImage(ImageReader(io.BytesIO(PNG)), 20, 500, width=100, height=100)
     pdf.save()
-    result = parse_file(source, "pdf", docling_artifacts_path=MODELS)
+    result = parse_file(source, "pdf", docling_artifacts_path=MODELS,
+                        pdf_ocr=PdfOcrSettings(enabled=False))
     assert result.metrics["pages_processed"] == 2
     assert result.processing_status == "partial"
     assert "pdf_page_without_text_ocr_required" in result.quality_flags

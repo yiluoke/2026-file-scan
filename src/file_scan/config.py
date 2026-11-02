@@ -44,6 +44,16 @@ class EmbeddingSettings:
     timeout_seconds: int = 60
 
 
+@dataclass(frozen=True)
+class PdfOcrSettings:
+    """日本語・ONNX Runtime CPU固定。autoはDoclingによる必要領域の選択。"""
+
+    enabled: bool = True
+    mode: str = "auto"
+    scale: float = 3.0
+    timeout_seconds: int = 1800
+
+
 @dataclass
 class Settings:
     sources: list[Source] = field(default_factory=list)
@@ -60,6 +70,7 @@ class Settings:
     copy_retries: int = 2
     pdf_backend: str = "docling"
     docling_artifacts_path: Path = field(default_factory=lambda: Path("data/models/docling"))
+    pdf_ocr: PdfOcrSettings = field(default_factory=PdfOcrSettings)
     include_hidden: bool = False
     chunk_max_characters: int = 1800
     chunk_max_tokens: int = 8191
@@ -153,6 +164,14 @@ def validate_settings(settings: Settings) -> None:
         raise ConfigError("parse_workersは4以下にしてください")
     _integer(settings.parse_worker_max_tasks, "parse_worker_max_tasks", 1)
     _integer(settings.parse_worker_max_memory_mb, "parse_worker_max_memory_mb", 128)
+    ocr = settings.pdf_ocr
+    _boolean(ocr.enabled, "pdf_ocr.enabled")
+    if ocr.mode not in {"auto", "full_page"}:
+        raise ConfigError("pdf_ocr.modeはautoまたはfull_pageを指定してください")
+    if isinstance(ocr.scale, bool) or not isinstance(ocr.scale, (int, float)) or not 1 <= ocr.scale <= 4:
+        raise ConfigError("pdf_ocr.scaleは1以上4以下の数値にしてください")
+    _integer(ocr.timeout_seconds, "pdf_ocr.timeout_seconds", 1)
+    _integer(settings.parse_timeout_seconds, "parse_timeout_seconds", 1)
     embedding = settings.embedding
     _boolean(embedding.enabled, "embedding.enabled")
     maximum = {"text-embedding-3-small": 1536, "text-embedding-3-large": 3072}
@@ -226,6 +245,11 @@ def load_config(path: str | Path) -> Settings:
         raise ConfigError("database_url_envの環境変数名が不正です")
     database = (os.environ.get("FILE_SCAN_DATABASE_URL") or os.environ.get(env_name)
                 or raw.get("database_url", DEFAULT_DATABASE_URL))
+    ocr = raw.get("pdf_ocr", {})
+    if not isinstance(ocr, dict):
+        raise ConfigError("pdf_ocrにはマッピングを指定してください")
+    if set(ocr) - {"enabled", "mode", "scale", "timeout_seconds"}:
+        raise ConfigError("pdf_ocrに未対応の項目があります。言語・エンジン・モデルは日本語CPU構成に固定です")
     embedding = raw.get("embedding", {})
     if not isinstance(embedding, dict):
         raise ConfigError("embeddingにはマッピングを指定してください")
@@ -250,6 +274,12 @@ def load_config(path: str | Path) -> Settings:
         pdf_backend=_string(raw.get("pdf_backend", "docling"), "pdf_backend"),
         docling_artifacts_path=_path(raw.get("docling_artifacts_path", "data/models/docling"),
                                     base, "docling_artifacts_path"),
+        pdf_ocr=PdfOcrSettings(
+            enabled=_boolean(ocr.get("enabled", True), "pdf_ocr.enabled"),
+            mode=_string(ocr.get("mode", "auto"), "pdf_ocr.mode"),
+            scale=ocr.get("scale", 3.0),
+            timeout_seconds=_integer(ocr.get("timeout_seconds", 1800), "pdf_ocr.timeout_seconds", 1),
+        ),
         include_hidden=_boolean(raw.get("include_hidden", False), "include_hidden"),
         chunk_max_characters=_integer(raw.get("chunk_max_characters", 1800), "chunk_max_characters", 100),
         chunk_max_tokens=_integer(raw.get("chunk_max_tokens", 8191), "chunk_max_tokens", 32),

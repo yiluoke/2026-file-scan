@@ -30,7 +30,7 @@ Ubuntu公式アーカイブの`resolute`、`resolute-updates`、`resolute-securi
 | tiktoken | 0.12.0 | python3-tiktoken |
 | NumPy / pandas | 2.3.5 / 2.3.3 | python3-numpy / python3-pandas |
 | PyTorch | 2.9.1 | python3-torch。Linuxでは公式CPU wheelの`2.9.1+cpu` |
-| OpenCV headless | 4.10.0.84 | python3-opencvの4.10.0に対応するPyPI wheel版 |
+| OpenCV（通常wheel） | 4.10.0.84 | python3-opencvの4.10.0に対応するPyPI wheel版 |
 | FastAPI / Uvicorn / greenlet | 0.118.0 / 0.38.0 / 3.3.2 | python3-fastapi / python3-uvicorn / python3-greenlet |
 | pytest / ReportLab / httpx | 9.0.2 / 4.4.10 / 0.28.1 | python3-pytest / python3-reportlab / python3-httpx |
 | pip / setuptools | 25.1.1 / 78.1.1 | python3-pip / python3-setuptools |
@@ -49,7 +49,7 @@ Ubuntu公式アーカイブの`resolute`、`resolute-updates`、`resolute-securi
 
 これらを含めて「全パッケージがUbuntu標準版と完全一致」とは扱わない。依存条件を満たす固定セットとして`pip check`と実処理で確認している。全ての版の完全一致を必須にする場合は、Docling等の機能・採用版か、Ubuntu配布物の利用方法を別途変更する必要がある。
 
-Doclingの公式slim配布で、使用するPDF・ローカルモデル用extraだけを導入する。Office抽出とチャンク分割は本プロジェクトの実装を使うため、Docling側のOffice・chunking・OCR用extraは導入しない。実モデルの固定コミットとハッシュは従来のlockを使用する。PDFの抽出プロファイルにはTransformers・TorchVision・OpenCV・NumPy・SciPy等の版も含め、変更前の抽出キャッシュを再利用しない。
+Doclingの公式slim配布で、使用するPDF・ローカルモデル用extraだけを導入する。Office抽出とチャンク分割は本プロジェクトの実装を使うため、Docling側のOffice・chunking用extraは導入しない。日本語OCRはrapidocr==3.9.1とCPU用onnxruntime==1.24.1を直接固定する。RapidOCRが通常のopencv-pythonを要求するためheadlessは併用しない。Ubuntuではlibgl1・libglib2.0-0t64を別途導入する。追加8依存はUbuntu標準版との一致を未調査のocr_project_pinとして対応表へ追記した。実モデルの固定コミットとハッシュは従来のlockを使用する。PDFの抽出プロファイルにはTransformers・TorchVision・OpenCV・NumPy・SciPy等の版も含め、変更前の抽出キャッシュを再利用しない。
 
 Transformers 5.0.0を使った試験では同じ公開PDFの表領域が検出されなかった。本文だけの確認では分からないため、6列の表セルを検査する実モデルテストを通る4.57.6へ固定した。テストの期待値を弱める変更は行っていない。
 
@@ -90,7 +90,7 @@ uv pip compile pyproject.toml requirements/ubuntu-26.04-tools.in \
 
 生成後、pip用に`--index-url https://pypi.org/simple`と`--extra-index-url https://download.pytorch.org/whl/cpu`をlockの先頭へ記録する。Ubuntuの提供版・対応表も更新し、実モデルを含めて再検証する。
 
-## 検証結果
+## 検証結果（2026-10-25の初期切替）
 
 macOS arm64上に、Python 3.14.4の独立した仮想環境を新規作成した。既存環境のsystem-site-packagesは継承していない。
 
@@ -104,3 +104,9 @@ macOS arm64上に、Python 3.14.4の独立した仮想環境を新規作成し�
 DBは既存のPostgreSQL 18.6＋pgvector 0.8.6＋PGroonga 4.1.0を使用。並行作業との取込ロック競合を避けるため、今回の実行では専用DB`file_scan_test_ubuntu2604`を使用した。通常のテストDBは変更していない。
 
 実行ログはローカルの`artifacts/ubuntu2604/pytest.log`、版照合は`artifacts/ubuntu2604/environment-check.json`へ保存した。Ubuntu OSでの実行結果やUbuntu独自パッチのバイナリ検証へ読み替えない。
+
+## 日本語OCR追加後の検証
+
+2026-11-02 日本語OCR追加後の最終確認：macOS arm64・Python 3.14.4、固定依存105件の不一致0件、pip check成功。PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0で全232テスト成功、スキップ0件。依存ライブラリ由来の非推奨警告11件。日本語スキャン／文字層との混在、全ページOCR、不良文字層置換、白紙、図の待ち、オフライン実行、モデル改変検知、設定変更後の新世代登録と再利用を確認した。Ruff・配布wheelへの両モデルlock同梱も成功。実書籍の精度、Ubuntu VM上の性能、実OpenAI API接続は未検証。詳細は[日本語OCRの実装・運用](rapidocr-pdf.md)。
+
+最終テスト結果はローカルの`artifacts/ocr-bootstrap/pytest.xml`、固定依存照合は`artifacts/ocr-bootstrap/environment-check.json`に保存した。OCR追加8依存のUbuntu標準版との対応は未調査として明示している。

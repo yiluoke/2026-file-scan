@@ -1,4 +1,4 @@
-"""DoclingのCPUレイアウト・表構造モデルを事前取得し、版とSHA-256を記録する。"""
+"""Doclingと日本語RapidOCRのCPUモデルを事前取得し、固定版・SHA-256を検査する。"""
 
 import argparse
 import hashlib
@@ -8,6 +8,7 @@ from pathlib import Path
 
 from file_scan.config import load_config
 from file_scan.models import LOCK_PATH, docling_version, verify_models
+from file_scan.ocr_models import prepare_ocr_models, verify_ocr_models
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -17,6 +18,8 @@ def download(config: Path, *, update_lock: bool = False, verify_only: bool = Fal
     destination = settings.docling_artifacts_path.resolve()
     if verify_only:
         verify_models(destination)
+        if settings.pdf_ocr.enabled:
+            verify_ocr_models(destination)
         print("固定版・モデル実体の整合性を確認しました", flush=True)
         return
     os.environ.setdefault("HF_HOME", str(ROOT / "data/models/huggingface-cache"))
@@ -67,6 +70,8 @@ def download(config: Path, *, update_lock: bool = False, verify_only: bool = Fal
         write_json(LOCK_PATH, lock)
     write_json(destination / "model-manifest.json", manifest)
     verify_models(destination)
+    if settings.pdf_ocr.enabled:
+        prepare_ocr_models(destination, update_lock=update_lock)
     print(f"Model manifest: {destination / 'model-manifest.json'}", flush=True)
 
 

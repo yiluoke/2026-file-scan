@@ -129,6 +129,16 @@
       "status": "standard_upstream"
     },
     {
+      "name": "colorlog",
+      "version": "6.12.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
+    },
+    {
       "name": "defusedxml",
       "version": "0.7.1",
       "marker": null,
@@ -240,6 +250,16 @@
       "ubuntu_debian_version": "1.2.0-1build1",
       "ubuntu_upstream_version": "1.2.0",
       "status": "standard_upstream"
+    },
+    {
+      "name": "flatbuffers",
+      "version": "25.12.19",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
     },
     {
       "name": "fsspec",
@@ -456,6 +476,26 @@
       "status": "standard_upstream"
     },
     {
+      "name": "omegaconf",
+      "version": "2.4.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
+    },
+    {
+      "name": "onnxruntime",
+      "version": "1.24.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
+    },
+    {
       "name": "openai",
       "version": "2.21.0",
       "marker": null,
@@ -465,14 +505,14 @@
       "status": "standard_upstream"
     },
     {
-      "name": "opencv-python-headless",
+      "name": "opencv-python",
       "version": "4.10.0.84",
       "marker": null,
       "ubuntu_package": "python3-opencv",
       "ubuntu_debian_version": "4.10.0+dfsg-7ubuntu5",
       "ubuntu_upstream_version": "4.10.0",
       "status": "version_mapping",
-      "note": "配布名・版表現が異なる対応版。"
+      "note": "RapidOCRがopencv-python配布を要求するため通常wheelを使用。headlessとの同時導入は禁止。Ubuntuではlibgl1・libglib2.0-0t64を別途導入。"
     },
     {
       "name": "openpyxl",
@@ -549,6 +589,16 @@
       "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
     },
     {
+      "name": "protobuf",
+      "version": "7.36.2",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
+    },
+    {
       "name": "psutil",
       "version": "7.1.0",
       "marker": null,
@@ -575,6 +625,16 @@
       "ubuntu_upstream_version": null,
       "status": "supplemental",
       "reason": "Ubuntu 26.04 main/universeの同名対応Pythonパッケージなし。プロジェクトの追加依存として固定。"
+    },
+    {
+      "name": "pyclipper",
+      "version": "1.4.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
     },
     {
       "name": "pydantic",
@@ -698,6 +758,16 @@
       "status": "standard_upstream"
     },
     {
+      "name": "rapidocr",
+      "version": "3.9.1",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
+    },
+    {
       "name": "referencing",
       "version": "0.36.2",
       "marker": null,
@@ -798,6 +868,16 @@
       "ubuntu_debian_version": "78.1.1-0.1build1",
       "ubuntu_upstream_version": "78.1.1",
       "status": "standard_upstream"
+    },
+    {
+      "name": "shapely",
+      "version": "2.2.0",
+      "marker": null,
+      "ubuntu_package": null,
+      "ubuntu_debian_version": null,
+      "ubuntu_upstream_version": null,
+      "status": "ocr_project_pin",
+      "reason": "2026-11-02 日本語RapidOCR CPU用の追加固定。Ubuntu標準版との一致は未調査。Python 3.14.4 macOS arm64で実OCR・pip checkを検証。"
     },
     {
       "name": "shellingham",
@@ -994,5 +1074,6 @@
       "ubuntu_upstream_version": "0.38.0",
       "status": "standard_upstream"
     }
-  ]
+  ],
+  "ocr_updated_on": "2026-11-02"
 }

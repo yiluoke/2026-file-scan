@@ -63,9 +63,9 @@ Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。
 | TXT・Markdown | UTF-8／CP932のテキスト抽出、行位置、Markdown見出し |
 | XLSX・XLSM | openpyxlとOOXMLで複数シート、結合、数式と保存済み結果、画像を抽出 |
 | DOCX | OOXMLを直接読み、段落・表の順序、見出し、目次参照、画像を抽出 |
-| PDF | 標準はDoclingの実モデルによる本文・表・レイアウト抽出。原本座標と画像を保持し、文字なしページはOCR待ちとして記録 |
+| PDF | 標準はDoclingの実モデルによる本文・表・レイアウト抽出。日本語RapidOCR＋ONNX Runtime CPUでスキャン本文も抽出。原本座標と画像を保持 |
 
-DoclingによるPDFの段組み・表・領域座標は抽出するが、全原本の完全復元は保証しない。Wordの表示レイアウトの再現は未対応。画像は実体と原本位置を保持し、OCR・画像説明待ちの`pending_images`として記録する。旧形式のDOC・XLS・PPTとPPTXは第1版の対象外。
+DoclingによるPDFの段組み・表・領域座標は抽出するが、全原本の完全復元は保証しない。Wordの表示レイアウトの再現は未対応。PDFのスキャン本文はローカルOCRを行う。Office埋込画像や図の意味説明は`pending_images`として残し、実体と原本位置を保持する。旧形式のDOC・XLS・PPTとPPTXは第1版の対象外。
 
 収集対象はTXT・MD・XLSX・XLSM・DOCX・PDF。Markdownの別拡張子`.markdown`も明示設定できる。`include_extensions`は対応文書形式の部分集合だけを受け付け、プログラム・SQL・JSON・YAML・YML・CSV・LOG等の追加は設定エラーにする。
 
@@ -106,9 +106,14 @@ python scripts/download_docling_models.py --config config.local.yaml
 ```yaml
 pdf_backend: docling
 docling_artifacts_path: data/models/docling
+pdf_ocr:
+  enabled: true
+  mode: auto
+  scale: 3.0
+  timeout_seconds: 1800
 ```
 
-CPU固定・OCR無効・外部サービス無効で処理する。公開PDF2件を実モデルで検証し、本文・表・bboxを確認する。画像の意味解析とOCRは後続処理。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
+日本語RapidOCR 3.9.1＋ONNX Runtime 1.24.1をCPUで実行する。`pdf_ocr.enabled`の既定値は`true`、`mode`は`auto`、期限は1800秒。モデルの不足・改変を実行前に検出する。PDFのOCR本文も既存チャンク・Embedding経路を使用する。画像の意味説明は後続処理。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
 
 PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。新規環境は[導入手順](docs/implementation/pgroonga.md)を参照。現在のComposeイメージはpgvectorのみ。検索APIは権限制御を保留したローカル試作として実装済み。[操作・公開・Dify接続手順](docs/implementation/search-api.md)を参照。
 

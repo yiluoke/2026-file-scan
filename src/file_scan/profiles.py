@@ -33,11 +33,18 @@ def extraction_profile(settings: Settings, file_format: str) -> tuple[str, dict]
             dependencies += (
                 "docling", "docling-slim", "docling-core", "docling-parse", "docling-ibm-models",
                 "torch", "torchvision", "transformers", "huggingface-hub",
-                "opencv-python-headless", "numpy", "scipy",
+                "opencv-python", "numpy", "scipy",
             )
             profile["models"] = verify_models(settings.docling_artifacts_path)
-            profile["options"] = {"device": "cpu", "ocr": False, "table_structure": True,
+            profile["options"] = {"device": "cpu", "ocr": settings.pdf_ocr.enabled, "table_structure": True,
                                   "picture_images": True, "remote_services": False, "threads": 2}
+            if settings.pdf_ocr.enabled:
+                from file_scan.ocr_models import ocr_profile, verify_ocr_models
+                dependencies += ("rapidocr", "onnxruntime", "omegaconf", "pyclipper", "shapely")
+                profile["ocr"] = ocr_profile(settings.pdf_ocr)
+                profile["ocr_models"] = verify_ocr_models(settings.docling_artifacts_path)
+                profile["implementation"]["ocr_models.py"] = hashlib.sha256(
+                    Path(__file__).with_name("ocr_models.py").read_bytes()).hexdigest()
     for dependency in dependencies:
         try:
             profile["dependencies"][dependency] = importlib.metadata.version(dependency)

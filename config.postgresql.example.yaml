@@ -17,6 +17,12 @@ sources:
 include_extensions: ['.txt', '.md', '.xlsx', '.xlsm', '.docx', '.pdf']
 pdf_backend: docling
 docling_artifacts_path: data/models/docling
+# PDFのみ：日本語RapidOCR + ONNX Runtime CPU（モデルは事前配置）
+pdf_ocr:
+  enabled: true
+  mode: auto  # auto: 必要領域のみ / full_page: 不良文字層を置き換える全ページOCR
+  scale: 3.0  # 72dpi × 3 = 216dpi
+  timeout_seconds: 1800  # PDF OCRの1ファイル上限。途中再開はしない
 include_hidden: false
 chunk_max_characters: 1800
 chunk_max_tokens: 8191

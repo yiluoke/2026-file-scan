@@ -50,11 +50,12 @@ def _verify(root: str, manifest_text: str, lock_text: str, signatures: tuple) ->
     return hashlib.sha256((manifest_text + lock_text).encode()).hexdigest()
 
 
-def verify_models(root: Path, lock_path: Path = LOCK_PATH) -> str:
+def verify_models(root: Path, lock_path: Path = LOCK_PATH, *,
+                  manifest_name: str = "model-manifest.json") -> str:
     """変更のない配置はプロセス内で再検査を省略。サイズ・mtime・ctimeも鍵にする。"""
     try:
         root = root.resolve()
-        manifest_text = (root / "model-manifest.json").read_text(encoding="utf-8")
+        manifest_text = (root / manifest_name).read_text(encoding="utf-8")
         lock_text = lock_path.read_text(encoding="utf-8")
         manifest = json.loads(manifest_text)
         signatures = []

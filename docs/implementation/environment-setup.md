@@ -1,6 +1,6 @@
 # 別環境での環境構築手順
 
-更新日：2026-10-25。現在のファイル取り込みCLIとDBスキーマv3を、新しい環境へ導入するための手順。Python・ライブラリ・DB・テーブル・モデル・設定を準備し、公開サンプルの取り込みまで確認する。
+更新日：2026-11-02。現在のファイル取り込みCLIとDBスキーマv3を、新しい環境へ導入するための手順。Python・ライブラリ・DB・テーブル・モデル・設定を準備し、公開サンプルの取り込みまで確認する。
 
 **本番導入先はWindowsホスト上のUbuntu 26.04 VM。** この環境では[Ubuntu 26.04 VM向け手順](ubuntu-26.04-vm.md)を先に参照する。標準Python 3.14の仮想環境と依存版の固定、拡張の版、SMBのマウント、Linuxサービスの起動方法を具体化している。以下のWindows PowerShell例は、Windowsへ直接導入する場合の参考である。
 
@@ -32,11 +32,13 @@ Pythonは[公式配布](https://www.python.org/downloads/)または導入先で�
 - `pyproject.toml`、`.python-version`、`requirements/`、`src/file_scan/`、`README.md`。
 - `scripts/`、`sql/postgresql/`、`config.example.yaml`、`.env.example`。
 - 検証する場合は`tests/`、`examples/`、`docs/`。
-- `src/file_scan/docling-models.lock.json`も必須。モデルの固定コミット・期待ハッシュを含む。
+- `src/file_scan/docling-models.lock.json`と`rapidocr-models.lock.json`も必須。モデルの固定版・期待ハッシュを含む。
 
 移設元の`.venv`・`.env`・`config.local.yaml`・PostgreSQLのデータディレクトリを、新規導入手順の入力として流用しない。設定と認証情報は新環境の値で作る。既存文書・DBのデータ移行は、この新規構築手順とは別作業とする。
 
 ## 2. Python仮想環境とライブラリの導入
+
+Ubuntuでは通常OpenCVのロード用に`sudo apt install -y libgl1 libglib2.0-0t64`も実行する。既存headless構成からの更新は[OCR更新手順](rapidocr-pdf.md)で両OpenCV配布を削除してから入れ直す。
 
 ### macOS／Linux
 
@@ -98,7 +100,8 @@ file-scan --version
 | `pgvector` | 0.5.1 | Python／SQLAlchemy側のvector型対応 |
 | `tiktoken` | 0.12.0 | Embedding入力のトークン計測 |
 | `docling-slim` | 2.140.0 | 公式DoclingのPDF・CPUモデル用extraを使用。本文・レイアウト・表構造抽出 |
-| `opencv-python-headless` | 4.10.0.84 | TableFormerの画像処理。Ubuntu OpenCV 4.10.0に対応 |
+| `opencv-python` | 4.10.0.84 | TableFormer・RapidOCRの画像処理。headless版は併用しない |
+| `rapidocr` / `onnxruntime` | 3.9.1 / 1.24.1 | PDFの日本語OCR・CPU推論 |
 
 検証用extraは`pytest==9.0.2`、`ruff==0.17.1`、`reportlab==4.4.10`、`httpx==0.28.1`。ReportLabはPDFテスト原本の生成に使う。
 
@@ -257,6 +260,8 @@ file-scan status --config config.local.yaml
 
 ## 6. Doclingモデルとトークナイザー辞書
 
+日本語スキャン書籍向けにRapidOCR＋ONNX Runtime CPUを採用した。以下は仮想環境を有効にしたPythonで実行する。ライブラリは`.venv`内、モデルの実体はプロジェクトの`data/models/docling/`内へ保存する。OCRは画像から文字を読む処理、トークナイザー辞書は抽出済み文章のトークン数を数えるもので、役割が異なる。
+
 ライブラリ導入だけではPDF用のモデル実体は揃わない。ネットワーク接続できる環境で次を実行する。
 
 ```sh
@@ -265,12 +270,12 @@ python scripts/download_docling_models.py --config config.local.yaml --verify-on
 python -c "from file_scan.tokens import count_tokens; print(count_tokens('日本語の初期確認'))"
 ```
 
-- 配置先は既定`data/models/docling/`。レイアウトモデルとTableFormer accurateを取得する。
+- 配置先は既定`data/models/docling/`。レイアウトモデル、TableFormer accurateと、日本語対応RapidOCRの検出・方向分類・文字認識のONNXモデル3点（合計約31.7 MB）を取得する。認識用文字集合は認識ONNX内に含まれる。`pdf_ocr.enabled: false`の場合はOCRモデルを取得・検査しない。
 - 通常の取得は同梱lockの固定コミットを使う。導入作業で`--update-lock`を付ける必要はない。
-- `model-manifest.json`、版・ファイルサイズ・ハッシュが検査される。
+- `model-manifest.json`と`ocr-model-manifest.json`について版・ファイルサイズ・ハッシュを検査する。モデル不足や改変時に、取込処理が自動でネット取得することはない。
 - 辞書は設定した`TIKTOKEN_CACHE_DIR`へ準備する。上記の相対パスはプロジェクトルートで使う前提。定期実行等で作業場所が変わる場合は絶対パスで指定する。
 
-PDF処理はCPU・OCR無効・外部サービス無効で実行する。文字のないページはOCR待ちになる。モデルの詳細は[Doclingの手順](docling-pdf.md)を参照。
+PDF処理はCPU・日本語OCR有効・外部サービス無効で実行する。既定`pdf_ocr.mode: auto`は必要領域をDoclingが選ぶ。不良な既存文字層は自動品質判定しないため、対象別の設定で`full_page`を指定して置き換える。OCR期限は`pdf_ocr.timeout_seconds: 1800`。モデル・設定変更後は通常の`ingest`で新世代を作る。オフライン移設・旧環境更新を含む詳細は[日本語OCRの手順](rapidocr-pdf.md)を参照。
 
 ## 7. 収集元の準備と設定
 
@@ -452,4 +457,4 @@ python -c "from file_scan.tokens import count_tokens; print(count_tokens('日本
 
 ## 14. この手順書の作成時に確認したこと
 
-macOS arm64の検証環境をPython 3.14.4の独立した仮想環境へ切り替えた。固定依存97件の版照合、`pip check`、全179テスト（スキップなし）、Doclingの実モデル、公開8原本の実DB登録・再実行、配布SQLとの一致を確認した。詳細は[Python版整合の検証記録](ubuntu-26.04-python.md)。Ubuntu OSの起動・Windows PowerShell・実OpenAI API接続はこの確認に含まない。導入先では8～10節で受入確認を行う。
+2026-11-02 日本語OCR追加後の最終確認：macOS arm64・Python 3.14.4、固定依存105件の不一致0件、pip check成功。PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0で全232テスト成功、スキップ0件。依存ライブラリ由来の非推奨警告11件。日本語スキャン／文字層との混在、全ページOCR、不良文字層置換、白紙、図の待ち、オフライン実行、モデル改変検知、設定変更後の新世代登録と再利用を確認した。Ruff・配布wheelへの両モデルlock同梱も成功。実書籍の精度、Ubuntu VM上の性能、実OpenAI API接続は未検証。詳細は[日本語OCRの実装・運用](rapidocr-pdf.md)。 導入先では8～10節で受入確認を行う。

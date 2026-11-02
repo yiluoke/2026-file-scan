@@ -1,5 +1,7 @@
 # 取り込み改善v3の検証結果
 
+2026-11-02追記：日本語OCR追加後は全232テスト成功・スキップなし。以下はv3初期改善時の記録。現在のOCR検証と制約は[日本語OCR](rapidocr-pdf.md)と[Python版整合の追加検証](ubuntu-26.04-python.md)を参照。
+
 検証日：2026-10-25。確定仕様は[取り込み改善設計](../design/05-ingestion-improvements.md)、物理定義は[DB設計](../design/04-database-tables.md)を参照。
 
 ## 自動テスト

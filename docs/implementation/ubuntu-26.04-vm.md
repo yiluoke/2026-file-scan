@@ -1,5 +1,7 @@
 # 本番導入先：Windowsホスト上のUbuntu 26.04 VM
 
+2026-11-02：日本語PDF OCRにRapidOCR＋ONNX Runtime CPUを追加した。モデル取得コマンドはOCRモデルも配置する。設定にpdf_ocr（enabled=true、mode=auto、scale=3.0、timeout_seconds=1800）を含める。モデルと両manifestは実行ユーザーが読める場所へ配置する。既存環境更新と受入確認は[日本語OCR](rapidocr-pdf.md)を参照。
+
 更新日：2026-10-25。導入先はWindowsホスト上で稼働するUbuntu 26.04 LTSの仮想マシン。アプリ・Python・DB・モデルはUbuntu内へ配置する。本書はその環境向けの構築案と実行例であり、Ubuntu実機での受入確認はこれから行う。
 
 必要ライブラリの版と役割、モデル準備、テーブルSQLの詳細は[共通の環境構築手順](environment-setup.md)も参照する。以下はUbuntu VMのコマンドであり、Windows PowerShellでは実行しない。
@@ -31,7 +33,7 @@ DBのデータ領域・実体保管先・キャッシュはUbuntuのローカル
 cat /etc/os-release
 uname -m
 sudo apt update
-sudo apt install -y ca-certificates curl git build-essential pkg-config software-properties-common cifs-utils python3 python3-venv
+sudo apt install -y ca-certificates curl git build-essential pkg-config software-properties-common cifs-utils python3 python3-venv libgl1 libglib2.0-0t64
 sudo add-apt-repository -y universe
 sudo apt update
 apt-cache policy postgresql-18 postgresql-18-pgvector libgroonga-dev

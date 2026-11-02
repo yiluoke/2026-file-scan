@@ -1,10 +1,10 @@
 # DoclingによるPDF抽出
 
-PDFの標準抽出方式はDocling。事前取得したレイアウト解析モデルとTableFormerをCPUで実行し、本文・見出し・表・原本ページ・領域座標を保存する。`native`を明示指定した場合だけ従来のpypdf本文抽出を使用する。
+PDFの標準抽出方式はDocling。事前取得したレイアウト解析モデル、TableFormerと日本語RapidOCRをCPUで実行し、本文・見出し・表・原本ページ・領域座標を保存する。`native`を明示指定した場合だけ従来のpypdf本文抽出を使用する。
 
 ## 導入と設定
 
-公式`docling-slim==2.140.0`の`convert-core`・`extract-core`・`format-pdf`・`models-local`を依存に含める。OpenCVも明示導入する。実行するDocling本体と実モデルは従来と同じ。独自チャンク処理で使わないchunking・OCR用追加依存を避ける。Python 3.14.4で実PDFの本文・表・bboxを検証した。版の固定理由は[Python版整合の記録](ubuntu-26.04-python.md)を参照。
+公式`docling-slim==2.140.0`の`convert-core`・`extract-core`・`format-pdf`・`models-local`を依存に含める。日本語OCRにはrapidocr==3.9.1・onnxruntime==1.24.1・opencv-python==4.10.0.84を明示導入する。headless版は併用しない。独自チャンク処理で使わないchunking用追加依存は導入しない。Python 3.14.4で実PDFの本文・表・bboxを検証した。版の固定理由は[Python版整合の記録](ubuntu-26.04-python.md)を参照。
 
 ```sh
 source .venv/bin/activate
@@ -18,11 +18,16 @@ python scripts/download_docling_models.py --config config.local.yaml
 ```yaml
 pdf_backend: docling
 docling_artifacts_path: data/models/docling
+pdf_ocr:
+  enabled: true
+  mode: auto
+  scale: 3.0
+  timeout_seconds: 1800
 ```
 
-モデルの取得先はYAMLの所在を基準に解決する。取得コマンドはDocling公式配布の`docling-project/docling-layout-heron`と、`docling-project/docling-models`のTableFormer accurateをダウンロードする。使用しない画像説明・OCR・VLM用モデルは取得しない。
+モデルの取得先はYAMLの所在を基準に解決する。取得コマンドはDocling公式配布の`docling-project/docling-layout-heron`と、`docling-project/docling-models`のTableFormer accurateをダウンロードする。OCR有効時はRapidOCRの日本語対応ONNX 3点も取得する。画像説明・VLM用モデルは取得しない。
 
-取得対象の固定コミットと期待ファイル・SHA-256は`src/file_scan/docling-models.lock.json`で管理する。通常の取得はlockを再現し、配置記録を`data/models/docling/model-manifest.json`へ保存する。利用前に版・ファイル一覧・サイズ・ハッシュを照合する。変更のない配置はプロセス内で検査結果を再利用し、モデルの更新時はPDFだけ別の抽出プロファイルになる。
+取得対象の固定コミットと期待ファイル・SHA-256は`src/file_scan/docling-models.lock.json`、OCR用は`rapidocr-models.lock.json`で管理する。通常の取得はlockを再現し、配置記録を`data/models/docling/model-manifest.json`と`ocr-model-manifest.json`へ保存する。利用前に版・ファイル一覧・サイズ・ハッシュを照合する。変更のない配置はプロセス内で検査結果を再利用し、モデルの更新時はPDFだけ別の抽出プロファイルになる。
 
 ```sh
 # 配置済み実体の検査（ネットワーク接続なし）
@@ -41,7 +46,7 @@ lockの更新は依存版・抽出結果と合わせてレビューする。通�
 - 図として検出した領域はPNGとbboxを保存し、画像の意味解析待ちを記録する。
 - PDF内の原画像はpypdfの画像取得機能で別途保持する。pypdfから抽出した本文をDoclingの本文へ混入させない。
 - 見出しだけの短いPDFも、原本ブロックと文字範囲を保持したチャンクを作る。
-- OCR、外部画像説明、外部サービス、外部プラグインは無効。文字のないページはOCR待ちの部分抽出として扱う。
+- 日本語RapidOCR＋ONNX Runtime CPUを有効にし、外部画像説明・外部サービス・外部プラグインは無効。autoは必要領域を選択し、full_pageは既存文字層をOCR結果で置き換える。OCR後に文字のないページは部分抽出として扱う。
 - モデル不足やDoclingの変換失敗をpypdf本文抽出へ自動で置き換えない。
 
 原本はローカルで処理する。インターネット接続が必要なのは、ライブラリ導入と明示的なモデル取得時である。
@@ -56,8 +61,10 @@ file-scan ingest --config config.local.yaml
 python scripts/test_postgres.py
 ```
 
-モデル初回読込を含め、文書ごとに`parse_timeout_seconds`の制限を適用する。解析子プロセスとDocling Converterは文書間で再利用し、タイムアウト・タスク数・処理後メモリ閾値でワーカーを交換する。既定では1プロセスで文書を順に処理する。公開PDFの`dummy.pdf`と`table.pdf`を実モデルで検証し、後者の表構造と両方のbboxを確認する。画像だけのページは画像を保持し、OCR未実施を成功扱いにしない。
+モデル初回読込を含め、OCR有効PDFは`pdf_ocr.timeout_seconds`（既定1800秒）、OCR無効時は`parse_timeout_seconds`（既定120秒）の制限を適用する。解析子プロセスとDocling Converterは文書間で再利用し、タイムアウト・タスク数・処理後メモリ閾値でワーカーを交換する。既定では1プロセスで文書を順に処理する。公開PDFの`dummy.pdf`と`table.pdf`を実モデルで検証し、後者の表構造と両方のbboxを確認する。日本語スキャン本文も実モデルで確認し、OCR完了した全面背景と図の意味解析待ちを区別する。OCR後に本文がないページや未処理ページを成功扱いにしない。
 
 `tests/test_docling.py`は実モデルを使う検証であり、モデルや公開サンプルが未配置の場合はスキップする。`tests/test_public_samples.py`は同じ公開PDFを含む8原本の実PostgreSQL登録・再利用を検証する。`native`の単体テストは明示設定で残す。
 
 [Docling公式：モデル事前取得とオフライン利用](https://docling-project.github.io/docling/usage/advanced_options/)
+
+日本語OCRのモデル構成・既存環境更新・オフライン移設・状態判定・長い書籍の制限は[日本語OCRの実装・運用](rapidocr-pdf.md)を参照する。

@@ -32,6 +32,12 @@ parse_worker_max_memory_mb: 1536  # 文書処理後のピークRSSで交換
 # PDFはDoclingの実モデルでレイアウト・表を抽出します。モデルは事前取得します。
 pdf_backend: docling
 docling_artifacts_path: data/models/docling
+# PDFのみ：日本語RapidOCR + ONNX Runtime CPU（モデルは事前配置）
+pdf_ocr:
+  enabled: true
+  mode: auto  # auto: 必要領域のみ / full_page: 不良文字層を置き換える全ページOCR
+  scale: 3.0  # 72dpi × 3 = 216dpi
+  timeout_seconds: 1800  # PDF OCRの1ファイル上限。途中再開はしない
 include_hidden: false
 
 # 原本文字範囲を保ち、検索用文脈を含むトークン数も上限内に分割します。

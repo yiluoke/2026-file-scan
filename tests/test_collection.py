@@ -42,6 +42,8 @@ def test_config_resolves_paths_relative_to_configuration_and_applies_defaults(tm
     assert settings.max_file_bytes == 100 * 1024 * 1024
     assert settings.copy_retries == 2
     assert settings.pdf_backend == "docling"
+    assert settings.pdf_ocr.enabled is True and settings.pdf_ocr.mode == "auto"
+    assert settings.pdf_ocr.timeout_seconds == 1800 and settings.pdf_ocr.scale == 3.0
     assert settings.docling_artifacts_path == tmp_path / "data/models/docling"
     assert settings.knowledge_id == "default"
     assert set(settings.include_extensions) == {".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md"}

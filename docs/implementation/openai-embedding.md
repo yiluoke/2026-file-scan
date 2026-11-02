@@ -1,5 +1,7 @@
 # OpenAI Embeddingとローカルファイルサーバーの検証
 
+日本語スキャンPDFはDocling内のRapidOCR＋ONNX Runtime CPUでローカルに文字化する。OCR自体にOpenAIキーは不要。OCR本文も既存のsearch_textを生成し、embed実行時にEmbedding APIへ送る。手順は[日本語OCR](rapidocr-pdf.md)を参照。
+
 取り込みは設定したファイルサーバーのパスを再帰収集し、原本のコピー、本文抽出、チャンクの下書き登録まで行う。続いて`embed`コマンドが抽出済みの`search_text`をOpenAI Embeddings APIへ送り、ベクトルをPostgreSQLのpgvector型で保存する。
 
 ## 設定

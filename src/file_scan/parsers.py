@@ -1,7 +1,7 @@
 """原本を実行・更新せず、位置を保持した共通ブロックへ変換する。
 
-第1版では抽出できた内容と未対応部分を明確に分ける。画像は保存するが、
-OCRや画像説明のAPIを呼ばず、後続処理が必要な画像として記録する。
+抽出できた内容と未対応部分を明確に分ける。PDFは日本語RapidOCRをCPUで使う。
+画像説明APIは呼ばず、図の意味解析やOffice画像の解析待ちを記録する。
 PDFのnativeルートは軽量な文字抽出であり、レイアウト解析器ではない。
 """
 
@@ -19,6 +19,7 @@ from typing import Any
 from zipfile import ZipFile
 
 from .domain import Block, ExtractedAsset, ExtractionResult, Relation
+from .config import PdfOcrSettings
 
 
 # XMLの巨大な宣言範囲や、書式だけが設定された最終セルを全面走査しない。
@@ -48,6 +49,7 @@ def parse_file(
     pdf_backend: str = "docling",
     include_hidden: bool = False,
     docling_artifacts_path: Path = Path("data/models/docling"),
+    pdf_ocr: PdfOcrSettings = PdfOcrSettings(),
 ) -> ExtractionResult:
     """形式に応じて抽出する。未対応形式や読めない原本は例外にする。
 
@@ -67,7 +69,7 @@ def parse_file(
     elif fmt == "docx":
         result = _parse_word(path)
     elif fmt == "pdf":
-        result = (_parse_pdf_docling(path, docling_artifacts_path)
+        result = (_parse_pdf_docling(path, docling_artifacts_path, pdf_ocr)
                   if pdf_backend == "docling" else _parse_pdf_native(path))
     else:
         raise ValueError(f"第1版では未対応の形式です: {file_format}")
@@ -658,7 +660,8 @@ def _parse_word(path: Path) -> ExtractionResult:
     return result
 
 
-def _pdf_original_images(page, page_index: int, result: ExtractionResult) -> None:
+def _pdf_original_images(page, page_index: int, result: ExtractionResult, *,
+                         ocr_background: bool = False) -> None:
     """PDF内の原画像を保持する補助。本文・表の抽出は行わない。"""
     location = {"format": "pdf", "page_number": page_index,
                 "coordinate_system": "pdf_bottom_left", "rotation": int(page.get("/Rotate", 0))}
@@ -673,11 +676,46 @@ def _pdf_original_images(page, page_index: int, result: ExtractionResult) -> Non
             ))
             result.blocks.append(Block(
                 block_id=image_id, element_type="figure", content_text=None, source_locations=[image_location], parent_id=page_id,
-                quality_flags=["image_analysis_pending", "pdf_image_position_unavailable"], extraction_method="pypdf_original_image",
+                quality_flags=[] if ocr_background else ["image_analysis_pending", "pdf_image_position_unavailable"],
+                content_data={"ocr_background": ocr_background}, extraction_method="pypdf_original_image",
             ))
-            result.pending_images += 1
+            if not ocr_background:
+                result.pending_images += 1
     except Exception:
         _flag(result, "pdf_image_extraction_failed")
+
+
+def _pdf_has_page_background(page) -> bool:
+    """単一の原画像がページの95%以上を覆う場合だけ、スキャン背景と判定する。"""
+    try:
+        if len(page.images) != 1:
+            return False
+        images = page.get("/Resources", {}).get("/XObject", {})
+        images = images.get_object() if hasattr(images, "get_object") else images
+        box = page.mediabox
+        covered = False
+
+        def visit(operator, operands, matrix, _):
+            nonlocal covered
+            if operator != b"Do" or not operands or operands[0] not in images:
+                return
+            image = images[operands[0]].get_object()
+            if image.get("/Subtype") != "/Image":
+                return
+            a, b, c, d, e, f = map(float, matrix)
+            # 傾いた画像の外接矩形だけでは全面を覆う証拠にならない。
+            if not ((abs(b) < 0.01 and abs(c) < 0.01) or
+                    (abs(a) < 0.01 and abs(d) < 0.01)):
+                return
+            xs, ys = [e, a + e, c + e, a + c + e], [f, b + f, d + f, b + d + f]
+            width = max(0, min(max(xs), float(box.right)) - max(min(xs), float(box.left)))
+            height = max(0, min(max(ys), float(box.top)) - max(min(ys), float(box.bottom)))
+            covered |= width * height >= float(box.width * box.height) * 0.95
+
+        page.extract_text(visitor_operand_before=visit)
+        return covered
+    except Exception:
+        return False
 
 
 def _parse_pdf_native(path: Path) -> ExtractionResult:
@@ -726,16 +764,25 @@ def _parse_pdf_native(path: Path) -> ExtractionResult:
 
 
 @lru_cache(maxsize=2)
-def _docling_converter(artifacts_path: Path, model_fingerprint: str, converter_type):
+def _docling_converter(artifacts_path: Path, model_fingerprint: str, converter_type,
+                       ocr: PdfOcrSettings = PdfOcrSettings(enabled=False),
+                       ocr_fingerprint: str = "disabled"):
     try:
         from docling.datamodel.accelerator_options import AcceleratorDevice, AcceleratorOptions
         from docling.datamodel.base_models import InputFormat
-        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.datamodel.pipeline_options import OcrMode, PdfPipelineOptions, RapidOcrOptions
         from docling.document_converter import PdfFormatOption
     except ImportError as exc:
         raise ParserDependencyError("pdf_backend='docling'にはDoclingが必要です。プロジェクトの依存を導入してください") from exc
     options = PdfPipelineOptions(artifacts_path=artifacts_path)
-    options.do_ocr = False
+    options.do_ocr = ocr.enabled
+    if ocr.enabled:
+        options.generate_parsed_pages = True
+        options.ocr_options = RapidOcrOptions(
+            lang=["iso:ja"], backend="onnxruntime", model_size="small", scale=ocr.scale,
+            mode=OcrMode.DEFAULT if ocr.mode == "auto" else OcrMode.FULL_PAGE,
+            text_score=0.5)
+        options.document_timeout = ocr.timeout_seconds
     options.do_table_structure = True
     options.generate_picture_images = True
     options.do_picture_description = False
@@ -747,7 +794,7 @@ def _docling_converter(artifacts_path: Path, model_fingerprint: str, converter_t
         InputFormat.PDF: PdfFormatOption(pipeline_options=options)})
 
 
-def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
+def _parse_pdf_docling(path: Path, artifacts_path: Path, ocr: PdfOcrSettings) -> ExtractionResult:
     """検査済みの固定モデルとプロセス内のConverterを再利用する。"""
     from file_scan.models import verify_models
     try:
@@ -760,17 +807,32 @@ def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
         raise ParserDependencyError(
             "Doclingモデルが未配置です。python scripts/download_docling_models.pyを実行してください")
     fingerprint = verify_models(artifacts_path)
-    converter = _docling_converter(artifacts_path, fingerprint, DocumentConverter)
+    from file_scan.ocr_models import ocr_profile, verify_ocr_models
+    ocr_fingerprint = verify_ocr_models(artifacts_path) if ocr.enabled else "disabled"
+    converter = _docling_converter(artifacts_path, fingerprint, DocumentConverter, ocr, ocr_fingerprint)
     converted = converter.convert(path)
     status = str(getattr(converted.status, "value", converted.status)).lower()
     if status not in {"success", "partial_success"}:
         raise ValueError("DoclingによるPDF変換が完了しませんでした")
     document = converted.document
     page_count = converted.input.page_count
+    method = "docling_cpu_rapidocr_ja" if ocr.enabled else "docling_cpu_ocr_disabled"
+    ocr_pages = {page.page_no for page in converted.pages
+                 if any(getattr(cell, "from_ocr", False) for cell in page.cells)}
+    from pypdf import PdfReader
+    original_pages = list(PdfReader(path).pages)
+    background_pages = {number for number, page in enumerate(original_pages, 1)
+                        if number in ocr_pages and _pdf_has_page_background(page)}
+    scores = [float(cell.confidence) for page in converted.pages for cell in page.cells
+              if getattr(cell, "from_ocr", False)]
     result = ExtractionResult(metrics={
-        "pdf_backend": "docling", "ocr_enabled": False, "device": "cpu",
+        "pdf_backend": "docling", "ocr_enabled": ocr.enabled, "device": "cpu",
         "pages_total": page_count, "pages_processed": len(converted.pages),
         "tables": 0, "pictures": 0, "layout_analysis": True,
+        "ocr": ocr_profile(ocr) if ocr.enabled else None,
+        "ocr_pages": sorted(ocr_pages), "ocr_text_cells": len(scores),
+        "ocr_confidence_mean": sum(scores) / len(scores) if scores else None,
+        "ocr_background_pages": sorted(background_pages),
     })
     if status == "partial_success" or converted.errors:
         _flag(result, "docling_partial_conversion")
@@ -782,7 +844,7 @@ def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
             block_id=f"pdf-page-{page_no}", element_type="page", content_text=None,
             source_locations=[{"format": "pdf", "page_number": page_no}],
             content_data={"size": page.size.model_dump(mode="json") if page else None},
-            extraction_method="docling_cpu_ocr_disabled",
+            extraction_method=method,
         ))
     section: list[str] = []
     text_pages: set[int] = set()
@@ -803,13 +865,23 @@ def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
         parent_id = f"pdf-page-{locations[0]['page_number']}"
         data: dict[str, Any] = {"docling_label": label}
         if label == "picture":
+            # 全面スキャン背景を図と誤認した場合だけ待ちを抑制。部分領域の図は残す。
+            background = False
+            if len(locations) == 1 and locations[0]["page_number"] in background_pages:
+                size = document.pages[locations[0]["page_number"]].size
+                bbox = locations[0].get("bbox", {})
+                area = abs((bbox.get("r", 0) - bbox.get("l", 0)) *
+                           (bbox.get("t", 0) - bbox.get("b", 0)))
+                background = area >= size.width * size.height * 0.95
+            data["ocr_background"] = background
             result.blocks.append(Block(
                 block_id=block_id, element_type="figure", content_text=None,
                 source_locations=locations, parent_id=parent_id, section_path=list(section),
-                quality_flags=["image_analysis_pending"], content_data=data,
-                extraction_method="docling_cpu_ocr_disabled",
+                quality_flags=[] if background else ["image_analysis_pending"], content_data=data,
+                extraction_method=method,
             ))
-            result.pending_images += 1
+            if not background:
+                result.pending_images += 1
             result.metrics["pictures"] += 1
             try:
                 image = item.get_image(document)
@@ -843,14 +915,15 @@ def _parse_pdf_docling(path: Path, artifacts_path: Path) -> ExtractionResult:
         result.blocks.append(Block(
             block_id=block_id, element_type=kind, content_text=text,
             source_locations=locations, parent_id=parent_id, section_path=list(section),
-            content_data=data, extraction_method="docling_cpu_ocr_disabled",
+            content_data=data, extraction_method=method,
         ))
     # 原画像はDoclingが図として検出しなかった場合も保存する。本文の代替には使わない。
-    from pypdf import PdfReader
-    for page_no, page in enumerate(PdfReader(path).pages, 1):
-        _pdf_original_images(page, page_no, result)
+    for page_no, page in enumerate(original_pages, 1):
+        _pdf_original_images(page, page_no, result,
+                             ocr_background=page_no in background_pages and page_no in text_pages)
     for block in result.blocks:
         if block.element_type == "page" and block.source_locations[0]["page_number"] not in text_pages:
-            block.quality_flags.append("pdf_page_without_text_ocr_required")
-            _flag(result, "pdf_page_without_text_ocr_required")
+            warning = "pdf_page_without_text_after_ocr" if ocr.enabled else "pdf_page_without_text_ocr_required"
+            block.quality_flags.append(warning)
+            _flag(result, warning)
     return result

@@ -12,22 +12,22 @@
 		<g transform="">
 			<rect x="0" y="12" width="220" height="116" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
 			<rect x="0" y="124" width="220" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
-			<text x="13" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,206) scale(1,-1)">埋込画像・スキャンPDF</text>
+			<text x="13" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,206) scale(1,-1)">PDF内の画面・図</text>
 			<text x="13" y="81" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,162) scale(1,-1)">[画面]  ユーザーID ______</text>
 			<text x="13" y="64" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,128) scale(1,-1)">          [登録]   [取消]</text>
 			<text x="13" y="47" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,94) scale(1,-1)">画像の中にしかない情報</text>
 			<rect x="260" y="12" width="230" height="116" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
 			<rect x="260" y="124" width="230" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
-			<text x="273" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,206) scale(1,-1)">現在：実体と位置を保存</text>
-			<text x="273" y="81" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,162) scale(1,-1)">画像ファイルを保管</text>
-			<text x="273" y="64" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,128) scale(1,-1)">元の段落・シート・ページへ対応</text>
-			<text x="273" y="47" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,94) scale(1,-1)">状態：画像の解析待ち</text>
+			<text x="273" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,206) scale(1,-1)">現在：PDFの日本語OCR</text>
+			<text x="273" y="81" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,162) scale(1,-1)">「登録」「取消」の文字を抽出</text>
+			<text x="273" y="64" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,128) scale(1,-1)">画像ファイル・位置を保管</text>
+			<text x="273" y="47" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,94) scale(1,-1)">文字を検索用テキストへ</text>
 			<rect x="530" y="12" width="227.89" height="116" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,95%,89%); fill-rule: evenodd;"/>
 			<rect x="530" y="124" width="227.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
-			<text x="543" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,206) scale(1,-1)">将来：OCR・画像説明</text>
-			<text x="543" y="81" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,162) scale(1,-1)">「登録」「取消」の文字</text>
-			<text x="543" y="64" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,128) scale(1,-1)">図の観測・説明を生成</text>
-			<text x="543" y="47" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,94) scale(1,-1)">現在は未実装</text>
+			<text x="543" y="103" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,206) scale(1,-1)">後続：図の意味説明</text>
+			<text x="543" y="81" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,162) scale(1,-1)">操作・矢印の意味を説明</text>
+			<text x="543" y="64" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,128) scale(1,-1)">Office画像のOCR</text>
+			<text x="543" y="47" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,94) scale(1,-1)">意味説明は解析待ち</text>
 			<path d="M 225,70 L 255,70 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
 			<polygon points="255 70, 249 73, 249 67" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
 			<path d="M 495,70 L 525,70 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7; stroke-dasharray: 4, 3;"/>

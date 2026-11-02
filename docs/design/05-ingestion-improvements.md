@@ -57,7 +57,7 @@ Doclingの`table.table_cells[].column_header`、既存形式の`headers`、必�
 
 `workers.ParsePool`はspawn方式の子プロセスを最大`parse_workers`個まで作り、文書間で再利用する。既定1、上限4。現在は文書ごとに取得・解析・DB確定を順に行うため、同時解析は1文書であり、設定を増やしても文書解析の並列実行にはならない。既定1でモデルの重複ロードを避ける。
 
-各プロセスはモデル配置先・検査済みfingerprint・Converter型でDocling Converterをキャッシュする。APIキー・DB接続は子へ渡さない。文書ごとの`parse_timeout_seconds`は維持し、期限超過やプロセス終了時はそのワーカーを停止・交換する。`parse_worker_max_tasks`回、または処理後のピークメモリが`parse_worker_max_memory_mb`以上になったワーカーも交換する。これは文書途中のハードなメモリ制限ではない。
+各プロセスはモデル配置先・検査済みfingerprint・Converter型・OCR有効／モード／scale／期限・OCRモデルfingerprintでDocling Converterをキャッシュする。APIキー・DB接続は子へ渡さない。OCR有効Docling PDFは`pdf_ocr.timeout_seconds`（既定1800秒）、他形式・OCR無効は`parse_timeout_seconds`（既定120秒）を使い、期限超過やプロセス終了時はそのワーカーを停止・交換する。`parse_worker_max_tasks`回、または処理後のピークメモリが`parse_worker_max_memory_mb`以上になったワーカーも交換する。これは文書途中のハードなメモリ制限ではない。
 
 レポートの`parser_workers`に起動・再利用・交換数、ピークメモリ・計測可否を出す。全体のingest/embed排他は維持する。残存ジョブを回収する処理はDB全体排他に依存するため、ロックだけを解除して並列化しない。
 
@@ -71,7 +71,7 @@ DB接続を閉じてからAPIを呼び、検査済み応答を短いトランザ
 
 ## 6. モデルの固定版と整合性
 
-配布対象の正本は`src/file_scan/docling-models.lock.json`。Docling版・取得元・固定コミット・許可パターン・期待ファイルとSHA-256をGit管理する。`data/models/docling/model-manifest.json`は実際の配置記録であり、両者を分ける。
+配布対象の正本は`src/file_scan/docling-models.lock.json`と`rapidocr-models.lock.json`。OCR用lockには日本語・ONNX Runtime CPU・smallの構成、依存版、固定配布URL、ONNX実体3点のサイズとSHAを含める。Docling版・取得元・固定コミット・許可パターン・期待ファイルとSHA-256をGit管理する。`data/models/docling/model-manifest.json`と`ocr-model-manifest.json`は実際の配置記録であり、両者を分ける。
 
 通常取得はlockの固定コミットだけを指定し、main等を再解決しない。モデル更新は`download_docling_models.py --update-lock`で明示的に行い、lockの差分もレビューする。`--verify-only`は取得せず検査する。
 
@@ -109,3 +109,5 @@ file-scan embed --config config.local.yaml
 検証は`tests/test_improvements.py`と既存テストで行う。PostgreSQL・pgvectorはテスト専用DB内の一時schema、APIはSDKのHTTP模擬、PDFは事前配置した実モデルを使用する。性能改善率、実共有サーバーのI/O、実API課金・検索品質は別途実測する。
 
 検証済み結果は[取り込み改善v3の検証記録](../implementation/ingestion-improvements-validation.md)を参照。
+
+日本語PDF OCRのモード・背景画像判定・長い書籍の制約と運用は[日本語OCR](../implementation/rapidocr-pdf.md)を参照。PDF OCRは原本単位の抽出キャッシュを使い、ページ／画像単位の途中再開は行わない。

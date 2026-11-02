@@ -16,7 +16,7 @@ class WorkerError(RuntimeError):
         super().__init__(code)
 
 
-def _worker(channel, backend, hidden, artifacts):
+def _worker(channel, backend, hidden, artifacts, ocr):
     from file_scan.parsers import parse_file
 
     try:
@@ -27,7 +27,8 @@ def _worker(channel, backend, hidden, artifacts):
             path, file_format = request
             try:
                 result = parse_file(Path(path), file_format, pdf_backend=backend,
-                                    include_hidden=hidden, docling_artifacts_path=Path(artifacts))
+                                    include_hidden=hidden, docling_artifacts_path=Path(artifacts),
+                                    pdf_ocr=ocr)
                 response = (True, result)
             except Exception as error:
                 response = (False, getattr(error, "code", type(error).__name__))
@@ -91,7 +92,7 @@ class ParsePool:
             parent, child = context.Pipe()
             process = context.Process(target=_worker, args=(
                 child, self.settings.pdf_backend, self.settings.include_hidden,
-                str(self.settings.docling_artifacts_path)))
+                str(self.settings.docling_artifacts_path), self.settings.pdf_ocr))
             try:
                 process.start()
             except BaseException:
@@ -106,7 +107,10 @@ class ParsePool:
         process, channel, tasks = self.slots[index]
         try:
             channel.send((str(asset.path), item.format))
-            if not channel.poll(self.settings.parse_timeout_seconds):
+            timeout = (self.settings.pdf_ocr.timeout_seconds
+                       if item.format == "pdf" and self.settings.pdf_backend == "docling"
+                       and self.settings.pdf_ocr.enabled else self.settings.parse_timeout_seconds)
+            if not channel.poll(timeout):
                 raise WorkerError("parse_timeout")
             success, result, memory = channel.recv()
             if memory is None:

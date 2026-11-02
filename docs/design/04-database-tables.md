@@ -1,5 +1,7 @@
 # データベース テーブル設計
 
+日本語PDF OCRではDDL変更は不要。winnapの既存blocks.content_text・source_locationsへOCR本文・ページ・bboxを、extraction_methodへdocling_cpu_rapidocr_jaを保存する。OCR条件・モデルSHAは抽出プロファイル、OCRページ・セル数・平均信頼度はquality_summary内のmetricsへ記録する。これはOCR文字の正確性や図の説明完了を保証しない。詳細は[日本語OCR](../implementation/rapidocr-pdf.md)。
+
 | 項目 | 内容 |
 | --- | --- |
 | プロジェクト | 2026-file-scan |

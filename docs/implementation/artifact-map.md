@@ -1,5 +1,7 @@
 # フォルダ配下の成果物と役割
 
+日本語PDF OCRの追加成果物：src/file_scan/ocr_models.py（固定版検査と準備）、rapidocr-models.lock.json（ONNXのURL・サイズ・SHA）、tests/test_rapidocr.pyとtests/fixtures/ocr/（実OCR検証）、docs/implementation/rapidocr-pdf.md（更新・オフライン・運用）。既存のdownload_docling_models.pyがレイアウト・表・OCRを一括準備する。
+
 対象：`/Users/yiluoke/Documents/2026-file-scan`
 
 実装・設定・設計資料はファイル単位で、DB内部ファイル、仮想環境、キャッシュはフォルダ単位で整理する。認証情報の値は記載しない。
@@ -55,15 +57,16 @@
 | `sources[].root` | 収集対象の最上位フォルダ | `data/file-server/department` |
 | `sources[].recursive` | サブフォルダも収集するか | `true` |
 | `exclude_directories` / `exclude_filenames` | 収集対象から除外するフォルダ・ファイル名 | `旧版/`、Office一時ファイル、TMP、作業中ファイル |
-| `include_extensions` | 収集する拡張子 | TXT・MD・PY・XLSX・XLSM・DOCX・PDF |
+| `include_extensions` | 収集する拡張子 | TXT・MD・XLSX・XLSM・DOCX・PDF |
 | `storage_dir` | 原本コピー・画像の保存先 | `artifacts/storage` |
 | `report_dir` | レポート・抽出結果の出力先 | `artifacts/reports` |
 | `pdf_backend` | PDF抽出方式 | `docling`。レイアウト・表構造の実モデルを使用 |
-| `docling_artifacts_path` | Doclingモデル配置先 | `data/models/docling` |
+| `docling_artifacts_path` | Docling・日本語OCRモデル配置先 | `data/models/docling` |
+| `pdf_ocr` | PDFの日本語OCR | enabled=true・auto・scale=3.0・期限1800秒 |
 | `chunk_max_characters` | チャンク本文の文字数上限 | `1800`。トークン数とは別 |
 | `max_file_bytes` | 収集する1ファイルのサイズ上限 | 100 MiB |
 | `copy_retries` | コピー中に原本が変化した場合の再試行回数 | `2` |
-| `parse_timeout_seconds` | 1文書の抽出処理の時間上限 | `120`秒 |
+| `parse_timeout_seconds` | OCR無効PDF・他形式の抽出時間上限 | `120`秒 |
 | `embedding.enabled` | OpenAI Embedding生成を有効にするか | `false` |
 | `embedding.model` / `dimensions` | 使用モデルと出力ベクトルの次元数 | `text-embedding-3-small` / `1536` |
 | `embedding.api_key_env` / `api_key` | APIキーの取得元となる環境変数名・YAML直接指定値 | `OPENAI_API_KEY`。現在は仮キー |
@@ -187,7 +190,7 @@ status:  cli → config → db → 登録状況の表示
 | [sql/postgresql/schema-v3.sql](../../sql/postgresql/schema-v3.sql) | 別環境へ現行20テーブル・制約・12索引・pgvector・適用版を導入するSQL |
 | [sql/postgresql/README.md](../../sql/postgresql/README.md) | 導入手順、作成表の役割、アプリ側の初期値、SQLの再生成方法 |
 | [scripts/test_postgres.py](../../scripts/test_postgres.py) | テスト専用DBへの接続確認とpytest起動 |
-| [scripts/check_python_environment.py](../../scripts/check_python_environment.py) | Python実体と、そのOSで必要な全固定依存の版照合。今回のmacOS環境では97件を確認 |
+| [scripts/check_python_environment.py](../../scripts/check_python_environment.py) | Python実体と、そのOSで必要な全固定依存の版照合。今回のmacOS環境では105件を確認 |
 | [examples/public-samples.json](../../examples/public-samples.json) | 公開サンプル8件のURL、提供元、保存先、SHA-256を記録した取得一覧 |
 | [examples/input/ユーザー登録.md](../../examples/input/ユーザー登録.md) | 以前の最小動作確認に使用した架空のMarkdown文書。現在の標準収集先は仮想ファイルサーバー |
 
@@ -197,7 +200,7 @@ status:  cli → config → db → 登録状況の表示
 | --- | --- |
 | [README.md](../../README.md) | プロジェクトの目的、導入、主要コマンド、実装範囲、資料への入口 |
 | [environment-setup.md](environment-setup.md) | 別環境のPython・必要ライブラリ、DB・テーブル、モデル、設定、取り込み確認、Windows・閉域環境の構築手順 |
-| [ubuntu-26.04-python.md](ubuntu-26.04-python.md) | Python 3.14.4への切替、Ubuntu標準対応版、5件の互換例外、全179テストの検証記録 |
+| [ubuntu-26.04-python.md](ubuntu-26.04-python.md) | Python 3.14.4への切替、Ubuntu標準対応版、5件の互換例外、全232テストと日本語OCR追加の検証記録 |
 | [ubuntu-26.04-vm.md](ubuntu-26.04-vm.md) | 本番のWindowsホスト上Ubuntu 26.04 VMに合わせたPython・DB・SMBマウント・systemd起動・受入確認 |
 | [01-document-conversion.md](../design/01-document-conversion.md) | 収集、形式別抽出、原本対応、分割、品質管理等の設計 |
 | [02-search-platform.md](../design/02-search-platform.md) | pgvector・全文検索・検索API・権限制御等の設計。設計には未実装部分も含む |
@@ -223,7 +226,7 @@ status:  cli → config → db → 登録状況の表示
 | `data/file-server/department/pdf/` | 公開PDF原本2件：`dummy.pdf`、`table.pdf` |
 | `data/file-server/department/旧版/` | 収集対象外フォルダの動作確認用 |
 | `data/postgresql/` | Macへ直接導入したPostgreSQLのクラスタ実体。DB、設定、稼働情報、ログ等を含む。アプリ用とテスト用のDBはこのクラスタ内にある |
-| `data/models/docling/` | レイアウト・表構造モデルと、版・ハッシュの取得記録 |
+| `data/models/docling/` | レイアウト・表構造・日本語OCRモデルと、版・ハッシュの取得記録 |
 | `data/tokenizer-cache/` | 入力トークン数検証用に取得したトークナイザー辞書。実行時のキャッシュ先はtiktokenの設定に従う |
 | `data/file_scan.sqlite3` | PostgreSQLへ切り替える前のローカルSQLite DB。現在の標準設定では参照しない |
 | `data/file_scan.sqlite3.ingest.lock` | 上記SQLiteに対応する取り込みロック用ファイル |
@@ -266,7 +269,7 @@ DB・保管先はアプリが管理する成果物で、抽出結果を確認す
 - DB定義や移行を変える：`src/file_scan/db.py`。
 - OpenAI API呼出とベクトル保存を変える：`src/file_scan/embeddings.py`。
 
-最新の検証記録：[ubuntu-26.04-python.md](ubuntu-26.04-python.md)にPython 3.14.4・179テスト・公開8原本の結果を記載する。改善適用時の記録は[ingestion-improvements-validation.md](ingestion-improvements-validation.md)。
+最新の検証記録：[ubuntu-26.04-python.md](ubuntu-26.04-python.md)にPython 3.14.4・232テスト・公開8原本の結果を記載する。改善適用時の記録は[ingestion-improvements-validation.md](ingestion-improvements-validation.md)。
 
 
 ## 検索API
