@@ -83,7 +83,7 @@ docker compose exec db psql -U file_scan -d file_scan_test -v ON_ERROR_STOP=1 -c
 
 ## PGroonga
 
-2026-10-25に、ネイティブのPostgreSQL 18.6とpgvector 0.8.6へPGroonga 4.1.0を追加した。新しいネイティブ環境では[PGroonga導入手順](pgroonga.md)で実行時ライブラリ・DBごとの拡張検索パスと有効化を設定してから、以下の全テストを実行する。既存ComposeイメージにはPGroongaを含めていない。
+2026-10-25に、ネイティブのPostgreSQL 18.6とpgvector 0.8.6へPGroonga 4.1.0を追加した。[PGroonga導入手順](pgroonga.md)は2026-11-03に再精査済み。Macは実行時ライブラリ・DBごとの拡張検索パス、Ubuntuはサーバー標準配置を使い、拡張有効化後に検索表・索引を初期化する。既存ComposeイメージにはPGroongaを含めていない。
 
 既存のpublic配置は[専用スキーマへの移行](winnap-schema.md)を行ってから、新版のCLIを使用する。
 
@@ -104,4 +104,4 @@ python -m ruff check src tests scripts
 
 `test_postgres.py`はテスト専用接続先を必須とし、PostgreSQL・pgvector・PGroongaの導入を確認し、版を表示してテストを実行する。テストでは一時表でベクトル保存・コサイン距離・HNSW索引の利用を確認し、取り込み契約テストは専用DB内のランダムなschemaを作成・削除する。SQLiteの単体テストも互換性確認用に残している。
 
-OpenAI Embeddingの設定・生成・保存は[専用手順](openai-embedding.md)を参照。PGroongaの拡張導入と日本語索引の基本動作は確認済み。検索APIは未実装。
+OpenAI Embeddingの設定・生成・保存は[専用手順](openai-embedding.md)を参照。検索API・日本語全文経路・3経路の統合は実装済みで、公開管理と起動は[検索APIの手順](search-api.md)に従う。実資料での日本語検索品質・性能の評価は別途行う。

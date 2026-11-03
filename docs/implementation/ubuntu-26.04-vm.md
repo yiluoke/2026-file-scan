@@ -13,7 +13,7 @@
 | Windows | 仮想マシンのホスト。仮想化ソフトの種類は未指定 |
 | Ubuntu | 26.04 LTS。`uname -m`でCPUアーキテクチャを確認する |
 | Python | Ubuntu標準の3.14系を使用。確認版3.14.4。標準版から仮想環境を作成する |
-| DB | Ubuntu内のPostgreSQL 18＋pgvector 0.8.6。検索の追加検証にはPGroongaも導入する |
+| DB | Ubuntu内のPostgreSQL 18＋pgvector 0.8.6。検索APIを使う場合はPGroongaも必須 |
 | アプリ | `/opt/file-scan/app/`へソース一式、同ディレクトリの`.venv`へPython依存を導入する例 |
 | 原本・モデル・レポート | `/var/lib/file-scan/`配下。Ubuntu側のローカルディスクを使う |
 | トークナイザー | `/var/cache/file-scan/tiktoken/` |
@@ -88,21 +88,22 @@ sudo make PG_CONFIG=/usr/lib/postgresql/18/bin/pg_config install
 
 CPU固有の最適化フラグを外し、VM移動時のCPU差を減らす例。[pgvector公式ビルド方法](https://github.com/pgvector/pgvector#installation)
 
-### PGroonga（検索検証を含める場合）
+### PGroonga（検索APIを使う場合は必須）
 
 PGroonga公式のUbuntuパッケージ手順は確認時点で24.04／22.04を掲載している。26.04に別リリース用リポジトリをそのまま適用せず、ここでは公式のソースビルド手順を用いる。[対応環境](https://pgroonga.github.io/install/)、[ソース導入](https://pgroonga.github.io/install/source.html)
 
-Ubuntuの[libgroonga-dev](https://packages.ubuntu.com/resolute/libgroonga-dev)を使用する例。ローカルMacのGroonga 16.1.4と同一バイナリにはならないため、実際の版を記録し、PGroongaの共存テストを行う。
+Ubuntuの[libgroonga-dev](https://packages.ubuntu.com/resolute/libgroonga-dev)を使用する例。PGroonga 4.1.0が要求するGroonga 14.1.0以上を確認する。ローカルMacの16.1.4と同一バイナリにはならないため、実際の版を記録し、PGroongaの共存テストを行う。導入・索引・日本語検索の確認は[再精査したPGroonga手順](pgroonga.md)を参照。
 
 ```sh
 sudo apt install -y libgroonga-dev libxxhash-dev meson ninja-build
-pkg-config --modversion groonga
+pkg-config --modversion groonga libxxhash
+pkg-config --atleast-version=14.1.0 groonga
 mkdir -p "$HOME/file-scan-build"
 cd "$HOME/file-scan-build"
 curl -fL https://packages.groonga.org/source/pgroonga/pgroonga-4.1.0.tar.gz -o pgroonga-4.1.0.tar.gz
 printf '%s  %s\n' '0ce8d58e73820bb74e82882afa58d6c0c5c46d43ae8349c6fc05c7097b85ee40' 'pgroonga-4.1.0.tar.gz' | sha256sum --check
 tar -xzf pgroonga-4.1.0.tar.gz
-meson setup pgroonga-build pgroonga-4.1.0 --buildtype=release --wrap-mode=nofallback -Dpg_config=/usr/lib/postgresql/18/bin/pg_config -Dtest=false
+meson setup pgroonga-build pgroonga-4.1.0 --buildtype=release --wrap-mode=nofallback -Dpg_config=/usr/lib/postgresql/18/bin/pg_config -Dinstall_to_postgresql=true -Dxxhash=enabled -Dmessage_pack=auto -Dtest=false
 meson compile -C pgroonga-build
 sudo meson install -C pgroonga-build
 sudo ldconfig
@@ -125,10 +126,10 @@ CREATE DATABASE file_scan OWNER file_scan;
 CREATE DATABASE file_scan_test OWNER file_scan;
 \connect file_scan
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-CREATE EXTENSION IF NOT EXISTS pgroonga;
+CREATE EXTENSION IF NOT EXISTS pgroonga WITH SCHEMA public;
 \connect file_scan_test
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
-CREATE EXTENSION IF NOT EXISTS pgroonga;
+CREATE EXTENSION IF NOT EXISTS pgroonga WITH SCHEMA public;
 \quit
 ```
 

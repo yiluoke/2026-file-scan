@@ -17,7 +17,7 @@
 | 本番の実行OS | Windowsホスト上のUbuntu 26.04 VM。アプリ・Python・DBはUbuntu内へ配置し、SMB共有はLinuxへマウントして使う |
 | DB | PostgreSQL 18.6＋pgvector 0.8.6で検証。Docker Composeで用意する方法と、既存DBを利用する方法のどちらかを選ぶ |
 | DBクライアント | 既存DBを使う場合は`psql`。Docker方式ではコンテナ内の`psql`を使えるため、ホスト側の導入は不要 |
-| 検索用の追加拡張 | 取り込みにはPostgreSQL＋pgvectorを使う。追加されたPGroonga検証も含めて全テストを行う場合は、PGroongaもサーバーへ導入する（10節参照） |
+| 検索用の追加拡張 | 取り込みにはPostgreSQL＋pgvectorを使う。検索APIを利用する場合、またはその実DBテストを含める場合はPGroongaもサーバーへ導入する（[PGroonga手順](pgroonga.md)と10節参照） |
 | モデル実行 | CPUでDoclingを実行する。GPU・CUDAの準備は必須ではない |
 | メモリ・ディスク | 公開サンプル処理では解析ワーカーだけで約1.25 GiBのピークを観測。OS・DB・Python分にも余裕を持たせる。依存パッケージ、モデル、原本コピー、世代履歴の保存容量を別に確保する |
 | ネットワーク | 初回はPythonパッケージ配布元、Dockerレジストリ（Docker方式）、Hugging Faceのモデル配布元、トークナイザー辞書配布元へ接続。公開サンプルはその提供元へ接続する |
@@ -356,12 +356,14 @@ file-scan status --config config.local.yaml
 
 ### 取り込み環境の検証（PostgreSQL＋pgvector）
 
-追加のPGroongaテストを除き、取り込み・DDLを確認する場合。CLIテストが明示する接続先をアプリ用環境変数で上書きしないよう、テストプロセスだけ`FILE_SCAN_DATABASE_URL`を外す。
+PGroongaの拡張テストと、PGroongaを前提とする検索API・公開コピー付き移行の実DBテストを除き、取り込み・DDLを確認する場合。CLIテストが明示する接続先をアプリ用環境変数で上書きしないよう、テストプロセスだけ`FILE_SCAN_DATABASE_URL`を外す。
 
 macOS／Linux：
 
 ```sh
-env -u FILE_SCAN_DATABASE_URL python -m pytest -q --ignore=tests/test_pgroonga.py
+env -u FILE_SCAN_DATABASE_URL python -m pytest -q \
+  --ignore=tests/test_pgroonga.py --ignore=tests/test_search.py \
+  --deselect=tests/test_namespace.py::test_migration_keeps_documents_vectors_publications_indexes_and_sequences
 ```
 
 PowerShell：
@@ -370,7 +372,7 @@ PowerShell：
 $applicationUrl = $env:FILE_SCAN_DATABASE_URL
 try {
     Remove-Item Env:FILE_SCAN_DATABASE_URL -ErrorAction SilentlyContinue
-    python -m pytest -q --ignore=tests/test_pgroonga.py
+    python -m pytest -q --ignore=tests/test_pgroonga.py --ignore=tests/test_search.py --deselect=tests/test_namespace.py::test_migration_keeps_documents_vectors_publications_indexes_and_sequences
 } finally {
     $env:FILE_SCAN_DATABASE_URL = $applicationUrl
 }
