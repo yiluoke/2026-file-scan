@@ -9,6 +9,7 @@
 /logs/
 /var/
 /config.local.yaml
+/config.cpp-*.local.yaml
 
 # Python local environment and caches
 .venv

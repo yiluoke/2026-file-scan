@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="windowTitle"><string>サンプル画面</string></property>
+  <widget class="QPushButton" name="startButton">
+   <property name="text"><string>実行</string></property>
+  </widget>
+ </widget>
+ <connections>
+  <connection><sender>startButton</sender><signal>clicked()</signal><receiver>MainWindow</receiver><slot>start()</slot></connection>
+ </connections>
+</ui>

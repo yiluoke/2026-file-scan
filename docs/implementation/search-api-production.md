@@ -129,6 +129,7 @@ sources:
     root: /mnt/file-server/department
     recursive: true
     exclude_directories: [旧版/]
+    exclude_directory_names: [BK]  # どの階層でも同名フォルダと配下を除外
     exclude_filenames: ['~$*', '*.tmp']
 embedding:
   enabled: true

@@ -1,0 +1,4 @@
+# file-scanのvenvとは分ける。Python 3.12で検証。
+# --no-depsで本体を導入後、codewiki-api.lockを導入する（専用API経路）。
+# 上流の全依存を入れる場合はNode.js/npm等も必要。実装手順を参照。
+codewiki @ git+https://github.com/FSoft-AI4Code/CodeWiki.git@1b4af43d6d20c8dbd758fe1d5f888cc6947ed11d

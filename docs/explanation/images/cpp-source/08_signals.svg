@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="142" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 142" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="142"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-142)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="23" width="236" height="107" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="126" width="236" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,210) scale(1,-1)">記述を拾う</text>
+			<text x="13" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">connect(sender, &amp;S::changed,</text>
+			<text x="13" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">        receiver, &amp;R::handle)</text>
+			<text x="13" y="49" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,98) scale(1,-1)">マクロ形式・lambda形式も</text>
+			<path d="M 240,77 L 262,77 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="262 77, 256 80, 256 74" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="268" y="23" width="220" height="107" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="268" y="126" width="220" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="281" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,210) scale(1,-1)">接続式と引数を記録</text>
+			<text x="281" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">原本に式があること</text>
+			<text x="281" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">宣言・条件・位置</text>
+			<text x="281" y="49" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,98) scale(1,-1)">相手の対応は候補</text>
+			<path d="M 492,77 L 516,77 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7; stroke-dasharray: 4, 3;"/>
+			<polygon points="516 77, 510 80, 510 74" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<rect x="522" y="23" width="235.89" height="107" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,95%,89%); fill-rule: evenodd;"/>
+			<rect x="522" y="126" width="235.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<text x="535" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,210) scale(1,-1)">実際に処理が動くか</text>
+			<text x="535" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">型・分岐・寿命・接続状態</text>
+			<text x="535" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">実装照合・実行確認へ</text>
+			<text x="535" y="49" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,98) scale(1,-1)">初期版では自動確定しない</text>
+		</g>
+	</g>
+</svg>

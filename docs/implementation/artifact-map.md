@@ -56,7 +56,9 @@
 | `sources[].source_id` | 収集元の継続的な識別子 | `local-file-server` |
 | `sources[].root` | 収集対象の最上位フォルダ | `data/file-server/department` |
 | `sources[].recursive` | サブフォルダも収集するか | `true` |
-| `exclude_directories` / `exclude_filenames` | 収集対象から除外するフォルダ・ファイル名 | `旧版/`、Office一時ファイル、TMP、作業中ファイル |
+| `exclude_directories` | 特定の相対パスと配下を除外 | `旧版/` |
+| `exclude_directory_names` | 階層を問わず同名フォルダと配下を除外（大小文字を区別しない完全一致） | `[BK]` |
+| `exclude_filenames` | ファイル名globで除外 | Office一時ファイル、TMP、作業中ファイル |
 | `include_extensions` | 収集する拡張子 | TXT・MD・XLSX・XLSM・DOCX・PDF |
 | `storage_dir` | 原本コピー・画像の保存先 | `artifacts/storage` |
 | `report_dir` | レポート・抽出結果の出力先 | `artifacts/reports` |

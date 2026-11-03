@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="148" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 148" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="148"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-148)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="22" width="233" height="114" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="132" width="233" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="111" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,222) scale(1,-1)">QMLの記述</text>
+			<text x="13" y="89" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,178) scale(1,-1)">property int currentCount</text>
+			<text x="13" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">Connections { target: backend }</text>
+			<text x="13" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">onCountChanged: ...</text>
+			<path d="M 237,78 L 261,78 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7; stroke-dasharray: 4, 3;"/>
+			<polygon points="261 78, 255 81, 255 75" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<rect x="267" y="22" width="223" height="114" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="267" y="132" width="223" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="280" y="111" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,222) scale(1,-1)">公開名を手掛かりに照合</text>
+			<text x="280" y="89" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,178) scale(1,-1)">setContextProperty</text>
+			<text x="280" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">公開名：backend</text>
+			<text x="280" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">qmlRegister系の型登録</text>
+			<path d="M 494,78 L 519,78 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7; stroke-dasharray: 4, 3;"/>
+			<polygon points="519 78, 513 81, 513 75" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<rect x="525" y="22" width="232.89" height="114" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="525" y="132" width="232.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="538" y="111" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,222) scale(1,-1)">C++の公開情報</text>
+			<text x="538" y="89" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,178) scale(1,-1)">Q_PROPERTY</text>
+			<text x="538" y="72" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,144) scale(1,-1)">Q_INVOKABLE</text>
+			<text x="538" y="55" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,110) scale(1,-1)">候補として対応を確認</text>
+			<text x="0" y="5" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 9.5px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,10) scale(1,-1)">破線：名前・記述からの対応候補。bindingやJavaScriptは実行しません。</text>
+		</g>
+	</g>
+</svg>

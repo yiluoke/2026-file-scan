@@ -148,6 +148,33 @@ def test_storage_root_is_bound_to_database(database, settings):
         pipeline.ingest(changed, database)
 
 
+def test_excluding_directory_names_preserves_history_and_can_be_reversed(database, settings):
+    backup = settings.sources[0].root / "team/design/BK/backup.txt"
+    backup.parent.mkdir(parents=True)
+    backup.write_text("backup document", encoding="utf-8")
+    assert pipeline.ingest(settings, database)["summary"]["registered"] == 2
+    excluded = replace(settings, sources=[replace(settings.sources[0], exclude_directory_names=("BK",))])
+    report = pipeline.ingest(excluded, database)
+    assert report["status"] == "succeeded"
+    assert report["summary"]["deleted"] == 0
+    with database.connect() as conn:
+        rows = conn.execute(select(tables["documents"].c.source_key,
+                                   tables["documents"].c.source_status,
+                                   tables["knowledge_documents"].c.included,
+                                   tables["knowledge_documents"].c.collection_status).join(
+                                       tables["knowledge_documents"])).mappings().all()
+    by_path = {row["source_key"]: row for row in rows}
+    assert by_path["team/design/BK/backup.txt"]["included"] is False
+    assert by_path["team/design/BK/backup.txt"]["collection_status"] == "excluded"
+    assert by_path["team/design/BK/backup.txt"]["source_status"] != "deleted"
+    assert by_path["manual.md"]["included"] is True
+    assert count(database, "document_versions") == 2
+    assert count(database, "extraction_generations") == 2
+    assert pipeline.ingest(settings, database)["summary"]["unchanged"] == 2
+    with database.connect() as conn:
+        assert all(conn.execute(select(tables["knowledge_documents"].c.included)).scalars())
+
+
 def test_export_failure_is_repaired_from_database(database, settings, monkeypatch):
     real_export = pipeline._export
     monkeypatch.setattr(pipeline, "_export", lambda *args: (_ for _ in ()).throw(OSError()))

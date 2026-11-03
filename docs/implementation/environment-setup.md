@@ -296,6 +296,7 @@ sources:
     root: /mnt/company-share/department
     recursive: true
     exclude_directories: [旧版/]
+    exclude_directory_names: [BK]  # どの階層でも同名フォルダと配下を除外
     exclude_filenames: ['~$*', '*.tmp']
 storage_dir: artifacts/storage
 report_dir: artifacts/reports

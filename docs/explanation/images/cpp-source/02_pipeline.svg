@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="146" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 146" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="146"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-146)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="31" width="157" height="103" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="130" width="157" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="109" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,218) scale(1,-1)">scan / analyze</text>
+			<text x="13" y="87" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,174) scale(1,-1)">原本固定・CodeWiki構造</text>
+			<text x="13" y="70" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,140) scale(1,-1)">Qt補完／LLMなし</text>
+			<path d="M 160,80 L 178,80 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="178 80, 172 83, 172 77" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="181" y="31" width="175" height="103" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="181" y="130" width="175" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="194" y="109" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,218) scale(1,-1)">generate</text>
+			<text x="194" y="87" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,174) scale(1,-1)">指定LLMで日本語化</text>
+			<text x="194" y="70" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,140) scale(1,-1)">Markdownを検証</text>
+			<path d="M 359,80 L 377,80 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="377 80, 371 83, 371 77" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="380" y="31" width="175" height="103" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,96%,96%); fill-rule: evenodd;"/>
+			<rect x="380" y="130" width="175" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="393" y="109" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,218) scale(1,-1)">cpp-scan ingest</text>
+			<text x="393" y="87" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,174) scale(1,-1)">既存file-scanを呼ぶ</text>
+			<text x="393" y="70" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,140) scale(1,-1)">分割・DB下書き登録</text>
+			<path d="M 558,80 L 576,80 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="576 80, 570 83, 570 77" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="579" y="31" width="178.89" height="103" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(92%,96%,96%); fill-rule: evenodd;"/>
+			<rect x="579" y="130" width="178.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="592" y="109" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,218) scale(1,-1)">既存embed / 公開</text>
+			<text x="592" y="87" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,174) scale(1,-1)">Embedding → pgvector</text>
+			<text x="592" y="70" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,140) scale(1,-1)">明示公開 → 検索</text>
+			<text x="0" y="8" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,16) scale(1,-1)">新設：ソースから文書を作る</text>
+			<text x="380" y="8" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,16) scale(1,-1)">再利用：完成した文書の取込・検索</text>
+		</g>
+	</g>
+</svg>

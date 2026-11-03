@@ -29,6 +29,7 @@ class Source:
     recursive: bool = True
     exclude_directories: tuple[str, ...] = ()
     exclude_filenames: tuple[str, ...] = ()
+    exclude_directory_names: tuple[str, ...] = ()
 
 
 @dataclass
@@ -132,6 +133,16 @@ def _directory_exclusions(values: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _directory_name_exclusions(values: tuple[str, ...]) -> tuple[str, ...]:
+    if not isinstance(values, (list, tuple)):
+        raise ConfigError("exclude_directory_namesにはフォルダ名の配列を指定してください")
+    for value in values:
+        _string(value, "exclude_directory_names")
+        if value in {".", ".."} or any(char in value for char in "/\\*?[]\r\n"):
+            raise ConfigError("exclude_directory_namesにはパスやglobではなくフォルダ名のみ指定してください")
+    return tuple(values)
+
+
 def _database_url(value: str, base: Path) -> str:
     """SQLiteの相対パスだけを設定ファイル基準にする。認証情報は表示しない。"""
     match = re.match(r"^(sqlite(?:\+[a-zA-Z0-9_]+)?:///)(.*)$", value)
@@ -190,6 +201,7 @@ def validate_settings(settings: Settings) -> None:
     ids: set[str] = set()
     roots: list[Path] = []
     for source in settings.sources:
+        _directory_name_exclusions(source.exclude_directory_names)
         if source.source_id in ids:
             raise ConfigError("source_idが重複しています")
         ids.add(source.source_id)
@@ -235,6 +247,8 @@ def load_config(path: str | Path) -> Settings:
             recursive=_boolean(value.get("recursive", True), "recursive"),
             exclude_directories=_directory_exclusions(_strings(value.get("exclude_directories", []), "exclude_directories")),
             exclude_filenames=filenames,
+            exclude_directory_names=_directory_name_exclusions(
+                _strings(value.get("exclude_directory_names", []), "exclude_directory_names")),
         ))
     extensions = _strings(raw.get("include_extensions", list(DEFAULT_EXTENSIONS)), "include_extensions")
     if any(not extension.startswith(".") or len(extension) < 2

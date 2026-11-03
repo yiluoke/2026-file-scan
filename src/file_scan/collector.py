@@ -105,6 +105,7 @@ def collect(settings: Settings) -> ScanResult:
     extensions = {extension.lower() for extension in settings.include_extensions}
     for source in settings.sources:
         error_count = len(result.errors)
+        excluded_directory_names = {name.casefold() for name in source.exclude_directory_names}
         root = source.root.absolute()
         pending = [root]
         while pending:
@@ -134,7 +135,8 @@ def collect(settings: Settings) -> ScanResult:
                     _excluded(result, source, relative_path, "hidden")
                     continue
                 if stat.S_ISDIR(info.st_mode):
-                    if _excluded_directory(relative_path, source.exclude_directories):
+                    if (name.casefold() in excluded_directory_names
+                            or _excluded_directory(relative_path, source.exclude_directories)):
                         _excluded(result, source, relative_path, "excluded_directory")
                     elif source.recursive:
                         pending.append(path)

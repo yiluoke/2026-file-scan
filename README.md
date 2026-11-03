@@ -31,6 +31,20 @@ cp config.example.yaml config.local.yaml
 
 標準の収集元はプロジェクト内の仮想ファイルサーバー`data/file-server/department/`。`python scripts/download_samples.py`で公開TXT・Word・Excel・PDFを各2件配置してから試す。社内資料を試す場合は、`config.local.yaml`の`sources[].root`を取り込みたいフォルダへ変更する。相対パスは設定ファイルの所在を基準に解決する。収集対象と出力先の`storage_dir`・`report_dir`は別の場所にする。
 
+階層が不明なバックアップフォルダは、各収集元の`exclude_directory_names`へ名前を指定すると、どの階層でも配下ごと除外できる。名前は大小文字を区別しない完全一致で、`BK`は`bk`にも一致するが`BK2`には一致しない。パスやglobは指定しない。既存の`exclude_directories`は引き続き収集元からの相対パスで指定し、両方を併用できる。
+
+```yaml
+sources:
+  - source_id: department-share
+    root: /mnt/file-server/department
+    recursive: true
+    exclude_directory_names: [BK, 一時保存]  # 階層を問わず除外
+    exclude_directories: [設計書/旧版/]  # 特定の相対パスを除外
+    exclude_filenames: ['~$*', '*.tmp']
+```
+
+除外フォルダの内部は探索せず、`scan`のレポートへフォルダ単位で`excluded_directory`を記録する。先に`scan`で対象を確認してから`ingest`へ進む。取り込み済み文書が除外条件に一致した場合は、次回`ingest`で対象外となり、保存済みの履歴は残る。
+
 ローカル検証も **PostgreSQL 18＋pgvector** を使用する。先に[ローカルDBの導入・起動手順](docs/implementation/local-postgresql.md)でDBと`.env`を準備する。原本・画像は`artifacts/storage`、レポートは`artifacts/reports`へ保存する。DB起動後、接続情報を読み込んで次の順序で実行する。
 
 ```sh
@@ -55,6 +69,14 @@ file-scan status --config config.local.yaml
 終了コードは`0`が正常、`1`が設定・DB等の実行全体のエラー、`2`が部分抽出や個別ファイルの失敗等を含む完了。画像の解析待ちも部分抽出として扱う。
 
 Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。Windows実機・実際の社内ファイルサーバーでの動作は未検証。UNCパスはWindowsで使用し、macOS／Linuxではマウント先を指定する。
+
+## C++／Qt 5ソースの解析・取込
+
+文書取込とは別の`cpp-scan`を追加した。`scan` → `analyze` → `generate` → `ingest`の順に、ソース棚卸し、原本固定・CodeWiki構造解析・Qt補完、日本語Markdown生成、既存file-scanでの下書き登録を行う。`.pro`の詳細評価やビルドは必須にしない。
+
+[導入・操作手順](docs/implementation/cpp-source-ingestion.md)、[ソース解析設定例](config.cpp-source.example.yaml)、[生成文書の取込設定例](config.cpp-docs.example.yaml)を参照。CodeWikiは固定コミットの専用環境で実行する。生成後の分割・DB登録・Embeddingは既存処理を使用し、Embeddingと検索公開は別途明示実行する。
+
+仕組みは[C++／Qtソース取込処理の図解PDF](output/pdf/C++・Qtソース取込処理_図解ガイド.pdf)で説明している。[Markdown版](docs/explanation/C++・Qtソース取込処理_図解ガイド.md)も同じ本文と図を含む。
 
 ## 第1版の対応範囲
 
@@ -161,7 +183,7 @@ DBを使わずAPI接続を試す場合は、`search.test_mode: true`を設定し
 | 1. 文書変換処理 | [文書変換処理](docs/design/01-document-conversion.md) | 詳細設計案 |
 | 2. 検索基盤・API | [検索基盤・検索API](docs/design/02-search-platform.md) | 検索処理・API契約の設計案 |
 | 3. LLM＋チャット画面 | [LLM＋チャット画面](docs/design/03-llm-chat.md) | 概要設計案 |
-| 4. C++／Qt 5ソース解析取込 | [初期版仕様](docs/design/09-cpp-qt-source-ingestion-spec.md) | CodeWiki・Qt補完・仕様書生成・既存取込接続の仕様。未実装 |
+| 4. C++／Qt 5ソース解析取込 | [初期版仕様](docs/design/09-cpp-qt-source-ingestion-spec.md) | 収集・CodeWiki連携・Qt補完・日本語仕様書・既存取込接続を実装。[操作手順](docs/implementation/cpp-source-ingestion.md) |
 | 共通. データベース | [テーブル設計](docs/design/04-database-tables.md) | 論理・カラム・制約・索引の詳細設計案 |
 
 検索APIの見直しと参考にした実装は[GitHub検索API比較](docs/research/2026-10-25-github-search-api-comparison.md)を参照。検索APIと検索専用コピーへの明示公開は実装済み。文書ACL・SSOは保留。

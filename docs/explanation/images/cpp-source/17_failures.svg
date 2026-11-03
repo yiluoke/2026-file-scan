@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE svg
+  PUBLIC '-//W3C//DTD SVG 1.0//EN'
+  'http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd'>
+<svg width="757.89" height="148" preserveAspectRatio="xMinYMin meet" viewBox="0 0 757 148" xmlns="http://www.w3.org/2000/svg" version="1.0" fill-rule="evenodd" xmlns:xlink="http://www.w3.org/1999/xlink">
+	<title>...</title>
+	<desc>...</desc>
+	<clipPath id="clip">
+		<rect x="0" y="0" width="757.89" height="148"/>
+	</clipPath>
+	<g id="group" transform="scale(1,-1) translate(0,-148)" style="clip-path: url(#clip)">
+		<g transform="">
+			<rect x="0" y="23" width="212" height="114" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="0" y="133" width="212" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="13" y="112" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,224) scale(1,-1)">工程の結果</text>
+			<text x="13" y="90" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,180) scale(1,-1)">成功／部分失敗／失敗</text>
+			<text x="13" y="73" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,146) scale(1,-1)">失敗・未解決の範囲を記録</text>
+			<text x="13" y="56" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,112) scale(1,-1)">成功とレビュー済みは別</text>
+			<path d="M 216,108 L 247,108 Z" style="stroke: rgb(3%,49%,54%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="247 108, 241 111, 241 105" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<rect x="253" y="82" width="250" height="55" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
+			<rect x="253" y="133" width="250" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
+			<text x="266" y="112" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,224) scale(1,-1)">完成：受渡しの検証へ</text>
+			<text x="266" y="90" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,180) scale(1,-1)">MarkdownをDB下書き登録</text>
+			<path d="M 216,51 L 247,51 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7;"/>
+			<polygon points="247 51, 241 54, 241 48" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<rect x="253" y="12" width="250" height="55" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,95%,89%); fill-rule: evenodd;"/>
+			<rect x="253" y="63" width="250" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<text x="266" y="42" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 11.5px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,84) scale(1,-1)">部分失敗：既定で停止</text>
+			<text x="266" y="20" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,40) scale(1,-1)">欠落を明示・確認して再実行</text>
+			<path d="M 507,39 L 531,39 Z" style="stroke: rgb(70%,41%,9%); stroke-linecap: butt; stroke-width: 1.7; stroke-dasharray: 4, 3;"/>
+			<polygon points="531 39, 525 42, 525 36" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<rect x="537" y="23" width="220.89" height="114" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(100%,95%,89%); fill-rule: evenodd;"/>
+			<rect x="537" y="133" width="220.89" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(70%,41%,9%); fill-rule: evenodd;"/>
+			<text x="550" y="112" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(70%,41%,9%); stroke:none;" transform="translate(0,224) scale(1,-1)">明示的な部分取込</text>
+			<text x="550" y="90" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,180) scale(1,-1)">欠けた文書は旧版を保持</text>
+			<text x="550" y="73" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,146) scale(1,-1)">retained_pathsを確認</text>
+			<text x="550" y="56" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,112) scale(1,-1)">読取失敗から削除しない</text>
+		</g>
+	</g>
+</svg>

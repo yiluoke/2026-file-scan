@@ -1,0 +1,19 @@
+# 生成Markdown専用の既存file-scan設定。
+knowledge_id: cpp-qt5-sample
+system_id: qt5-sample
+environment: development
+sources:
+  - source_id: cpp-qt5-sample
+    root: artifacts/cpp-scan/qt5-sample/handoff/current
+    recursive: true
+include_extensions: [.md]
+database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan
+database_url_env: FILE_SCAN_DATABASE_URL
+# 同じDBを共用する場合、既存config.local.yamlのstorage_dirと一致させる。
+storage_dir: artifacts/storage
+report_dir: artifacts/cpp-document-reports
+embedding:
+  enabled: false
+  api_key_env: OPENAI_API_KEY
+  model: text-embedding-3-small
+  dimensions: 1536

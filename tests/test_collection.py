@@ -46,6 +46,7 @@ def test_config_resolves_paths_relative_to_configuration_and_applies_defaults(tm
     assert settings.pdf_ocr.timeout_seconds == 1800 and settings.pdf_ocr.scale == 3.0
     assert settings.docling_artifacts_path == tmp_path / "data/models/docling"
     assert settings.knowledge_id == "default"
+    assert settings.sources[0].exclude_directory_names == ()
     assert set(settings.include_extensions) == {".docx", ".xlsx", ".xlsm", ".pdf", ".txt", ".md"}
 
 
@@ -126,6 +127,72 @@ def test_exclusions_are_case_insensitive_and_directory_prefix_has_boundaries(tmp
     assert [item.relative_path for item in result.items] == ["active/KEEP.txt", "older/keep.TXT"]
     assert result.successful_sources == ["design"]
     assert {entry["reason"] for entry in result.exclusions} >= {"excluded_directory", "excluded_filename", "hidden"}
+
+
+def test_directory_names_exclude_subtrees_at_any_depth_without_visiting_them(tmp_path, monkeypatch):
+    import file_scan.collector as collector
+
+    root = tmp_path / "source"
+    excluded = ["BK", "team/bk", "team/design/Bk", "team/design/一時保存", "旧版"]
+    kept = ["BK2/keep.txt", "team/design/keep.txt", "team/旧版/keep.txt", "BK.txt"]
+    for relative_path in [*(f"{folder}/nested/skip.txt" for folder in excluded), *kept]:
+        path = root / relative_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("text", encoding="utf-8")
+    (root / "team/~$WORK.txt").write_text("temporary", encoding="utf-8")
+    settings = load_config(write_config(tmp_path, sources=[{
+        "source_id": "design", "root": "source", "recursive": True,
+        "exclude_directory_names": ["BK", "一時保存"],
+        "exclude_directories": ["旧版/"], "exclude_filenames": ["~$*"],
+    }]))
+    original = collector._entries_without_links
+    visited = []
+
+    def entries(directory):
+        visited.append(directory)
+        return original(directory)
+
+    monkeypatch.setattr(collector, "_entries_without_links", entries)
+    result = collect(settings)
+    assert {item.relative_path for item in result.items} == set(kept)
+    assert {entry["relative_path"] for entry in result.exclusions
+            if entry["reason"] == "excluded_directory"} == set(excluded)
+    assert all(not directory.is_relative_to(root / folder)
+               for directory in visited for folder in excluded)
+    assert not result.errors
+    assert result.successful_sources == ["design"]
+
+
+def test_directory_name_exclusions_apply_only_to_the_configured_source(tmp_path):
+    settings = configured(tmp_path)
+    other = tmp_path / "other-source"
+    for root in (settings.sources[0].root, other):
+        (root / "nested/BK").mkdir(parents=True)
+        (root / "nested/BK/manual.txt").write_text("text", encoding="utf-8")
+    settings.sources = [replace(settings.sources[0], exclude_directory_names=("BK",)),
+                        Source("other", other)]
+    result = collect(settings)
+    assert [(item.source_id, item.relative_path) for item in result.items] == [
+        ("other", "nested/BK/manual.txt")]
+    assert set(result.successful_sources) == {"design", "other"}
+
+
+@pytest.mark.parametrize("names", [
+    None, "BK", [None], [42], [""], [" "], ["."], [".."], ["BK/"], ["a/BK"],
+    ["a\\BK"], ["**/BK"], ["BK*"], ["BK?"], ["[BK]"], ["BK\n"], ["BK\r"],
+])
+def test_invalid_directory_name_exclusions_are_rejected(tmp_path, names):
+    with pytest.raises(ConfigError, match="exclude_directory_names"):
+        load_config(write_config(tmp_path, sources=[{
+            "source_id": "design", "root": "source", "exclude_directory_names": names,
+        }]))
+
+
+def test_direct_settings_validate_directory_name_exclusions(tmp_path):
+    settings = configured(tmp_path)
+    settings.sources = [replace(settings.sources[0], exclude_directory_names=("BK/",))]
+    with pytest.raises(ConfigError, match="exclude_directory_names"):
+        collect(settings)
 
 
 def test_non_recursive_and_hidden_settings(tmp_path):

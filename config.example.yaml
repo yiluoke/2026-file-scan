@@ -19,6 +19,7 @@ sources:
     root: data/file-server/department
     recursive: true
     exclude_directories: [旧版/]
+    exclude_directory_names: [BK]  # 階層を問わず同名フォルダと配下を除外（大小文字を区別しない）
     exclude_filenames: ['~$*', '*.tmp', '*_作業中.*']
 
 include_extensions: ['.txt', '.md', '.xlsx', '.xlsm', '.docx', '.pdf']
