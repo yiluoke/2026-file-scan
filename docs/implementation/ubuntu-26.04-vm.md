@@ -2,7 +2,7 @@
 
 2026-11-02：日本語PDF OCRにRapidOCR＋ONNX Runtime CPUを追加した。モデル取得コマンドはOCRモデルも配置する。設定にpdf_ocr（enabled=true、mode=auto、scale=3.0、timeout_seconds=1800）を含める。モデルと両manifestは実行ユーザーが読める場所へ配置する。既存環境更新と受入確認は[日本語OCR](rapidocr-pdf.md)を参照。
 
-更新日：2026-10-25。導入先はWindowsホスト上で稼働するUbuntu 26.04 LTSの仮想マシン。アプリ・Python・DB・モデルはUbuntu内へ配置する。本書はその環境向けの構築案と実行例であり、Ubuntu実機での受入確認はこれから行う。
+更新日：2026-11-03。導入先はWindowsホスト上で稼働するUbuntu 26.04 LTSの仮想マシン。アプリ・Python・DB・モデルはUbuntu内へ配置する。本書はその環境向けの構築案と実行例であり、Ubuntu実機での受入確認はこれから行う。
 
 必要ライブラリの版と役割、モデル準備、テーブルSQLの詳細は[共通の環境構築手順](environment-setup.md)も参照する。以下はUbuntu VMのコマンドであり、Windows PowerShellでは実行しない。
 
@@ -14,7 +14,8 @@
 | Ubuntu | 26.04 LTS。`uname -m`でCPUアーキテクチャを確認する |
 | Python | Ubuntu標準の3.14系を使用。確認版3.14.4。標準版から仮想環境を作成する |
 | DB | Ubuntu内のPostgreSQL 18＋pgvector 0.8.6。検索APIを使う場合はPGroongaも必須 |
-| アプリ | `/opt/file-scan/app/`へソース一式、同ディレクトリの`.venv`へPython依存を導入する例 |
+| アプリ | `/opt/file-scan/`へソース一式、同ディレクトリの`.venv`へPython依存を導入する例 |
+| アプリ設定・ソース | `/opt/file-scan/config.local.yaml`・`.env`。処理は`/opt/file-scan/src/file_scan/`と`/opt/file-scan/src/search/` |
 | 原本・モデル・レポート | `/var/lib/file-scan/`配下。Ubuntu側のローカルディスクを使う |
 | トークナイザー | `/var/cache/file-scan/tiktoken/` |
 | 取込元 | SMB共有ならUbuntuへマウントし、`/mnt/file-server/department`等を指定する |
@@ -39,17 +40,17 @@ sudo apt update
 apt-cache policy postgresql-18 postgresql-18-pgvector libgroonga-dev
 sudo apt install -y postgresql-18 postgresql-client-18 postgresql-server-dev-18
 sudo adduser --system --group --home /var/lib/file-scan file-scan
-sudo install -d -o file-scan -g file-scan /opt/file-scan/app
+sudo install -d -o file-scan -g file-scan /opt/file-scan
 sudo install -d -o file-scan -g file-scan /var/lib/file-scan/storage /var/lib/file-scan/reports /var/lib/file-scan/models
 sudo install -d -o file-scan -g file-scan /var/cache/file-scan/tiktoken
 sudo systemctl enable --now postgresql
 pg_lsclusters
 ```
 
-配布したソース一式を`/opt/file-scan/app/`へ配置し、実行ユーザーが読み書きできる権限を設定する。移設元の`.venv`やDBデータ領域はコピーしない。実行ユーザーには共有の読込権限と実体保管先の書込権限を与える。
+配布したソース一式を`/opt/file-scan/`へ配置し、実行ユーザーが読み書きできる権限を設定する。移設元の`.venv`やDBデータ領域はコピーしない。実行ユーザーには共有の読込権限と実体保管先の書込権限を与える。
 
 ```sh
-sudo chown -R file-scan:file-scan /opt/file-scan/app
+sudo chown -R file-scan:file-scan /opt/file-scan
 ```
 
 ## 3. Ubuntu標準Python 3.14と固定依存
@@ -58,7 +59,7 @@ sudo chown -R file-scan:file-scan /opt/file-scan/app
 
 ```sh
 sudo -u file-scan -H bash
-cd /opt/file-scan/app
+cd /opt/file-scan
 python3.14 --version
 python3.14 -m venv .venv
 source .venv/bin/activate
@@ -136,7 +137,7 @@ CREATE EXTENSION IF NOT EXISTS pgroonga WITH SCHEMA public;
 PGroongaを導入しない取り込み専用環境は、その2行だけ省略する。次はアプリ実行ユーザーから、TCP接続で配布SQLを実行する。
 
 ```sh
-cd /opt/file-scan/app
+cd /opt/file-scan
 psql -h 127.0.0.1 -U file_scan -d file_scan -v ON_ERROR_STOP=1 -f sql/postgresql/schema-v3.sql
 psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT version FROM winnap.schema_migrations;"
 psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT extname, extversion FROM pg_extension WHERE extname IN ('vector', 'pgroonga');"
@@ -146,7 +147,9 @@ psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT extname, extversion FROM 
 
 ## 5. アプリ設定・モデル
 
-実行ユーザーで`/opt/file-scan/app`に移動し、仮想環境を有効にする。新規なら設定例をコピーし、実際のDBパスワード・必要ならAPIキーを設定する。
+実行ユーザーで`/opt/file-scan`に移動し、仮想環境を有効にする。新規なら設定例をコピーし、実際のDBパスワード・必要ならAPIキーを設定する。
+
+設定ファイルは`/opt/file-scan/`直下に置く。YAML内の相対パスは、この設定ファイルの親ディレクトリが基準となる。既存設定はコピーで上書きしない。検索APIも本番運用する場合は、[検索API本番手順の共通設定](search-api-production.md#4-共通設定と認証情報)に従い、共通の`config.local.yaml`と取込用`.env`を引き継いで、API用`.env.search`を同じ直下へ追加する。
 
 ```sh
 cp config.example.yaml config.local.yaml
@@ -265,18 +268,20 @@ RequiresMountsFor=/mnt/file-server
 Type=oneshot
 User=file-scan
 Group=file-scan
-WorkingDirectory=/opt/file-scan/app
-EnvironmentFile=/opt/file-scan/app/.env
+WorkingDirectory=/opt/file-scan
+EnvironmentFile=/opt/file-scan/.env
 UMask=0077
 ExecStartPre=/usr/bin/mountpoint -q /mnt/file-server
 ExecStartPre=/usr/bin/test -r /mnt/file-server/department
 ExecStartPre=/usr/bin/findmnt -rn -t cifs -T /mnt/file-server/department
-ExecStart=/opt/file-scan/app/.venv/bin/file-scan ingest --config /opt/file-scan/app/config.local.yaml
+ExecStart=/opt/file-scan/.venv/bin/file-scan ingest --config /opt/file-scan/config.local.yaml
 TimeoutStartSec=infinity
 KillMode=control-group
 ```
 
 この例は6節の共有と実パスを設定した後で使う。EnvironmentFileは引用符なしの`名前=値`の形式で作り、`.env`は実行ユーザーのみが読めるようにする。
+
+検索API本番手順で`.env`をroot所有・0600へ変更した場合も、このユニットの`EnvironmentFile`は同じパスを使う。手動操作では5節の一般ユーザーによる`source .env`を使わず、[検索API本番手順の管理者シェル](search-api-production.md#5-テーブル初期化と実資料の公開)で環境変数を読み、`runuser`でアプリ処理を実行する。
 
 ```sh
 sudo systemctl daemon-reload

@@ -10,8 +10,11 @@
 
 | 対象 | 配置・接続 |
 | --- | --- |
-| APIソース | `/opt/file-scan/app/src/search/`。取込の`src/file_scan/`と並列 |
-| Python環境 | `/opt/file-scan/app/.venv/`。現在は取込・検索を同じ配布物から導入する |
+| プロジェクトルート | `/opt/file-scan/`。`pyproject.toml`・設定ファイル・`src/`を直接置く |
+| 取込ソース | `/opt/file-scan/src/file_scan/` |
+| 検索APIソース | `/opt/file-scan/src/search/`。取込と独立した並列のパッケージ |
+| アプリ設定 | `/opt/file-scan/config.local.yaml`を共有。環境変数は同じ直下の`.env`・`.env.search` |
+| Python環境 | `/opt/file-scan/.venv/`。現在は取込・検索を同じ配布物から導入する |
 | APIプロセス | OSユーザー`file-scan`、systemdの`file-search.service`、1プロセス |
 | API待受 | `127.0.0.1:8000`。現CLIに外部bind用の`--host`はない |
 | 接続入口 | NginxのHTTPS 443。許可した接続元だけ通す |
@@ -21,7 +24,31 @@
 | トークナイザー | `/var/cache/file-scan/tiktoken`へ事前配置 |
 | 質問Embedding | OpenAIへHTTPS接続。公開データが採用したモデル・次元数を使用 |
 
-DB名・接続先・配置パスは導入先に合わせて変更する。ただし、既存DBの`storage_dir`は初回登録時の絶対パスと照合される。移設時にYAMLだけを書き換えて既存DBへ接続しない。DBと保管先の移行計画を先に確認する。
+検索APIに関係する主なソースとアプリ設定の配置は次のとおり。リポジトリの内容を`/opt/file-scan/`へ直接配置する。
+
+```text
+/opt/file-scan/
+├── pyproject.toml
+├── config.example.yaml
+├── config.local.yaml       # 取込・検索の共通設定（Git管理外）
+├── .env                    # 取込・公開管理用の環境変数（Git管理外）
+├── .env.search             # 常駐API用の環境変数（Git管理外）
+├── .venv/                  # Ubuntu上で作成するPython環境
+├── src/
+│   ├── file_scan/          # ファイル取込処理
+│   └── search/             # 検索API・公開管理処理
+├── requirements/
+├── scripts/
+└── …                       # sql/・docs/等の配布物
+```
+
+`pyproject.toml`は`src/`から両パッケージを導入し、`file-scan`と`file-search`の起動コマンドを`.venv/bin/`へ作成する。作業ディレクトリは`/opt/file-scan/`とし、導入済みのコマンドを使う。
+
+YAML内の相対パスは、カレントディレクトリではなく**設定ファイルの親ディレクトリ**を基準に解決される。例えば`storage_dir: artifacts/storage`は`/opt/file-scan/artifacts/storage`となる。本番例では永続データを`/var/lib/file-scan/`、辞書キャッシュを`/var/cache/file-scan/`へ置き、YAMLには絶対パスを設定する。取込元の`/mnt/file-server/`も含め、これらはソースの配置先とは用途が異なる。
+
+DB名・接続先・データ配置パスは導入先に合わせて変更する。ただし、既存DBの`storage_dir`は初回登録時の絶対パスと照合される。移設時にYAMLだけを書き換えて既存DBへ接続しない。DBと保管先の移行計画を先に確認する。
+
+アプリ設定はプロジェクト直下へ置く。systemdユニットの`/etc/systemd/system/`、Nginx設定・証明書の`/etc/nginx/`、SMBマウント用の認証ファイルは、各OSサービスが参照する配置先を使う。
 
 通常稼働時は、APIからOpenAIへのHTTPS通信が必要となる。パッケージ・モデル・辞書の配布元への接続は構築時に準備する。SMBのTCP 445は取込側の要件であり、APIは保管済み原本をローカルで読む。
 
@@ -48,11 +75,11 @@ DB名・接続先・配置パスは導入先に合わせて変更する。ただ
 
 2026-11-03に再確認した[PGroonga公式Ubuntu手順](https://pgroonga.github.io/install/ubuntu.html)の対応一覧は22.04／24.04で、26.04は掲載されていない。本環境では既存VM手順の[公式ソースビルド](https://pgroonga.github.io/install/source.html)を使い、別Ubuntu版向けのAPTリポジトリを流用しない。Macの`artifacts/pgroonga-runtime/`や`.venv`はUbuntuへコピーしない。
 
-ソース一式を`/opt/file-scan/app/`へ配置してから、OSユーザー`file-scan`で実行する。既存の仮想環境がある場合は、新版用の配布先で準備し、稼働中の環境を上書きしない。
+ソース一式を`/opt/file-scan/`へ配置してから、OSユーザー`file-scan`で実行する。以下は新規導入時の操作である。既存環境の更新は11節に従い、稼働中のソース・仮想環境を上書きしない。
 
 ```sh
 sudo -u file-scan -H bash
-cd /opt/file-scan/app
+cd /opt/file-scan
 python3.14 --version
 python3.14 -m venv .venv
 source .venv/bin/activate
@@ -95,25 +122,39 @@ PostgreSQLはVM内からだけ接続できる待受とし、TCP認証をSCRAMで
 
 現実装は取込・検索で同じYAMLを読み、共通項目はDB・ナレッジ・保管先・Embedding設定となる。前に検討した`common.yaml`・`file_scan.yaml`・`search.yaml`への3分割は未実装である。検索専用のYAML項目は現時点で`search.test_mode`。ポートと履歴検索許可はCLI引数、検索件数上限・期限・予算はコードの既定値である。
 
-本書では共通YAMLを`/etc/file-scan/config.yaml`、環境変数を用途別の2ファイルへ置く。ナレッジ・保管先等は共通YAMLで管理し、接続するDBロールを環境変数で分ける。現ローダーは接続URL全体を受け取るため、2つのenvファイルのDBホスト・ポート・DB名を同じ値に合わせる。
+本書では共通YAMLを`/opt/file-scan/config.local.yaml`、環境変数を用途別の2ファイルへ置く。ナレッジ・保管先等は共通YAMLで管理し、接続するDBロールを環境変数で分ける。現ローダーは接続URL全体を受け取るため、2つのenvファイルのDBホスト・ポート・DB名を同じ値に合わせる。
 
 | ファイル | 利用者・内容 |
 | --- | --- |
-| `/etc/file-scan/config.yaml` | 両機能で共有する設定。取込元も含め、初期構築または既存設定を引き継ぐ |
-| `/etc/file-scan/ingest.env` | 管理用。DB所有ロール`file_scan`の接続先、OpenAIキー、辞書配置先 |
-| `/etc/file-scan/search.env` | API用。後述の`file_scan_search`の接続先、検索接続キー、OpenAIキー、辞書配置先 |
+| `/opt/file-scan/config.local.yaml` | 両機能で共有する設定。取込元も含め、初期構築または既存設定を引き継ぐ |
+| `/opt/file-scan/.env` | 管理用。DB所有ロール`file_scan`の接続先、OpenAIキー、辞書配置先 |
+| `/opt/file-scan/.env.search` | API用。後述の`file_scan_search`の接続先、検索接続キー、OpenAIキー、辞書配置先 |
 
-既存の`file-scan-ingest.service`を使う場合も、`EnvironmentFile`を`/etc/file-scan/ingest.env`、`ExecStart`の`--config`を`/etc/file-scan/config.yaml`へ揃える。元の共有マウント検査は保持し、変更後に`systemctl daemon-reload`する。古い`config.local.yaml`と新しい共通YAMLを別々に更新する運用にしない。
+既存の`file-scan-ingest.service`を使う場合も、`WorkingDirectory=/opt/file-scan`、`EnvironmentFile=/opt/file-scan/.env`、起動コマンド`/opt/file-scan/.venv/bin/file-scan`、`--config /opt/file-scan/config.local.yaml`へ揃える。元の共有マウント検査は保持し、変更後に`systemctl daemon-reload`する。既存の`config.local.yaml`を共通設定として引き継ぎ、同じ項目を管理する別のYAMLを作らない。
 
-管理者が新規作成する。既存ファイルがあればコピーせず内容を更新する。
+管理者が設定を準備する。次の操作は存在しないファイルだけを作成し、既存の設定・認証情報は保持したまま権限を揃える。既存設定がある場合は、後述の例で全体を置き換えず必要項目だけを更新する。
 
 ```sh
-sudo install -d -o root -g file-scan -m 0750 /etc/file-scan
-sudo install -o root -g file-scan -m 0640 /opt/file-scan/app/config.example.yaml /etc/file-scan/config.yaml
-sudo install -o root -g root -m 0600 /dev/null /etc/file-scan/ingest.env
-sudo install -o root -g root -m 0600 /dev/null /etc/file-scan/search.env
-sudoedit /etc/file-scan/config.yaml /etc/file-scan/ingest.env /etc/file-scan/search.env
+sudo bash <<'SETUP'
+set -eu
+cd /opt/file-scan
+if [ ! -e config.local.yaml ]; then
+  install -o root -g file-scan -m 0640 config.example.yaml config.local.yaml
+fi
+for env_file in .env .env.search; do
+  if [ ! -e "$env_file" ]; then
+    install -o root -g root -m 0600 /dev/null "$env_file"
+  fi
+done
+chown root:file-scan config.local.yaml
+chmod 0640 config.local.yaml
+chown root:root .env .env.search
+chmod 0600 .env .env.search
+SETUP
+sudoedit /opt/file-scan/config.local.yaml /opt/file-scan/.env /opt/file-scan/.env.search
 ```
+
+`config.local.yaml`・`.env`・`.env.search`は現行の`.gitignore`で除外される。`.env`のDB接続先は取込・公開管理用のまま維持し、API専用ロールは`.env.search`だけへ設定する。
 
 YAMLはコピーした全体設定を維持し、次の項目を実環境へ合わせる。これは差分の例であり、この断片だけでファイル全体を置き換えない。
 
@@ -142,7 +183,7 @@ search:
 
 既存DBの場合は`knowledge_id`・採用プロファイル・保管先を既存値へ合わせる。設定例に残った`embedding.api_key`の仮キーは削除し、実キーをYAMLへ書かない。モデル・次元数を変更する場合は、既存公開プロファイルとの混在を避ける移行が必要となる。
 
-`ingest.env`の形式。`PASSWORD`を実値へ置換し、URL予約文字はパーセントエンコードする。
+`.env`の形式。`PASSWORD`を実値へ置換し、URL予約文字はパーセントエンコードする。
 
 ```dotenv
 FILE_SCAN_DATABASE_URL=postgresql+psycopg://file_scan:PASSWORD@127.0.0.1:5432/file_scan
@@ -150,7 +191,7 @@ OPENAI_API_KEY=OPENAI_KEY
 TIKTOKEN_CACHE_DIR=/var/cache/file-scan/tiktoken
 ```
 
-`search.env`の形式。`SEARCH_DB_PASSWORD`と接続キーは、それぞれ別の値を用意する。OpenAIへの接続には実際の有効なキーが必要。
+`.env.search`の形式。`SEARCH_DB_PASSWORD`と接続キーは、それぞれ別の値を用意する。OpenAIへの接続には実際の有効なキーが必要。
 
 ```dotenv
 FILE_SCAN_DATABASE_URL=postgresql+psycopg://file_scan_search:SEARCH_DB_PASSWORD@127.0.0.1:5432/file_scan
@@ -169,7 +210,7 @@ PDF用のモデル・OCR設定は取込側の手順で準備する。検索API�
 
 ```sh
 sudo -u file-scan env TIKTOKEN_CACHE_DIR=/var/cache/file-scan/tiktoken \
-  /opt/file-scan/app/.venv/bin/python -c "from file_scan.tokens import count_tokens; print(count_tokens('初期確認'))"
+  /opt/file-scan/.venv/bin/python -c "from file_scan.tokens import count_tokens; print(count_tokens('初期確認'))"
 ```
 
 OpenAIへの接続経路・組織のCA設定も確認する。辞書不足による起動後の初回ダウンロードに依存しない。
@@ -181,11 +222,11 @@ OpenAIへの接続経路・組織のCA設定も確認する。辞書不足によ
 ```sh
 sudo bash
 set -a
-source /etc/file-scan/ingest.env
+source /opt/file-scan/.env
 set +a
-cd /opt/file-scan/app
-runuser -u file-scan -- .venv/bin/file-scan init-db --config /etc/file-scan/config.yaml
-runuser -u file-scan -- .venv/bin/file-search init-db --config /etc/file-scan/config.yaml
+cd /opt/file-scan
+runuser -u file-scan -- .venv/bin/file-scan init-db --config /opt/file-scan/config.local.yaml
+runuser -u file-scan -- .venv/bin/file-search init-db --config /opt/file-scan/config.local.yaml
 exit
 ```
 
@@ -201,19 +242,25 @@ FROM pg_index
 WHERE indexrelid = to_regclass('winnap.ix_search_chunks_fulltext');
 ```
 
-資料を取り込んだだけでは検索公開されない。[公開管理の詳細](search-api.md#版の作成と公開)に従い、次の順で準備する。以下も`ingest.env`を読み込んだ管理者シェルから`runuser`で実行する。
+資料を取り込んだだけでは検索公開されない。[公開管理の詳細](search-api.md#版の作成と公開)に従い、次の順で準備する。
 
 ```sh
-runuser -u file-scan -- .venv/bin/file-scan ingest --config /etc/file-scan/config.yaml
-runuser -u file-scan -- .venv/bin/file-scan embed --config /etc/file-scan/config.yaml
-runuser -u file-scan -- .venv/bin/file-scan status --config /etc/file-scan/config.yaml
-runuser -u file-scan -- .venv/bin/file-search create-release --config /etc/file-scan/config.yaml --release '<実際の業務版名>'
-runuser -u file-scan -- .venv/bin/file-search publish --config /etc/file-scan/config.yaml \
+sudo bash
+set -a
+source /opt/file-scan/.env
+set +a
+cd /opt/file-scan
+runuser -u file-scan -- .venv/bin/file-scan ingest --config /opt/file-scan/config.local.yaml
+runuser -u file-scan -- .venv/bin/file-scan embed --config /opt/file-scan/config.local.yaml
+runuser -u file-scan -- .venv/bin/file-scan status --config /opt/file-scan/config.local.yaml
+runuser -u file-scan -- .venv/bin/file-search create-release --config /opt/file-scan/config.local.yaml --release '<実際の業務版名>'
+runuser -u file-scan -- .venv/bin/file-search publish --config /opt/file-scan/config.local.yaml \
   --release '<実際の業務版名>' \
   --document-id 'sha256:<承認する原本のdocument_id>' \
   --generation-id 'sha256:<承認するgeneration_id>' \
   --reviewed-by '<実際の承認者ID>'
-runuser -u file-scan -- .venv/bin/file-search status --config /etc/file-scan/config.yaml
+runuser -u file-scan -- .venv/bin/file-search status --config /opt/file-scan/config.local.yaml
+exit
 ```
 
 山括弧の項目を実値へ置き換え、採用する各文書を明示公開する。初回作成した版は既定となる。以後、既定版を切り替えるときは`create-release`に`--make-default`を付ける。
@@ -251,7 +298,7 @@ GRANT INSERT ON winnap.search_events TO file_scan_search;
 
 このAPIロールに`CREATE`・業務表の`UPDATE/DELETE`・管理ロールの所属は付けない。拡張関数の既定の実行権限を変更しているDBでは、DB管理者が必要なPGroonga関数等の権限も確認する。新規構成は`public.pgroonga_*`を使い、旧`pgroonga`スキーマの互換関数には依存しない。
 
-`search.env`のDBパスワードをこのロールの値へ合わせ、`pg_hba.conf`で127.0.0.1からの接続を許可する。今後、参照表を増やす移行を行った場合は、この権限一覧も見直す。
+`.env.search`のDBパスワードをこのロールの値へ合わせ、`pg_hba.conf`で127.0.0.1からの接続を許可する。今後、参照表を増やす移行を行った場合は、この権限一覧も見直す。
 
 ## 7. systemdで常駐化
 
@@ -268,12 +315,12 @@ Requires=postgresql@18-main.service
 Type=exec
 User=file-scan
 Group=file-scan
-WorkingDirectory=/opt/file-scan/app
-EnvironmentFile=/etc/file-scan/search.env
+WorkingDirectory=/opt/file-scan
+EnvironmentFile=/opt/file-scan/.env.search
 Environment=PYTHONDONTWRITEBYTECODE=1
 UMask=0077
-ExecStartPre=/opt/file-scan/app/.venv/bin/python -c "from search.config import load_search_settings; c=load_search_settings('/etc/file-scan/config.yaml'); assert not c.test_mode, 'production requires search.test_mode=false'"
-ExecStart=/opt/file-scan/app/.venv/bin/file-search serve --config /etc/file-scan/config.yaml --port 8000
+ExecStartPre=/opt/file-scan/.venv/bin/python -c "from search.config import load_search_settings; c=load_search_settings('/opt/file-scan/config.local.yaml'); assert not c.test_mode, 'production requires search.test_mode=false'"
+ExecStart=/opt/file-scan/.venv/bin/file-search serve --config /opt/file-scan/config.local.yaml --port 8000
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=30
@@ -433,9 +480,11 @@ API1プロセスの同時検索は4件、DBプール4接続、待ち1秒、質�
 
 401は接続キー、404は範囲・公開原本、409は互換APIの不足、422は入力や未整備フィルター、429は同時実行、503/504はDB・Embedding・期限等を確認する。全文検索だけへ自動縮退する構成ではない。
 
-更新時は新版のソース・仮想環境を別の配置先で準備し、検証後にサービスを停止して切り替える。DB移行が必要なら事前に整合バックアップを取り、取込・Embedding・公開処理も止める。アプリだけを旧版へ戻してもDB移行が戻るとは扱わない。旧版が現在のDBと互換でない場合は、DBとstorageを同じバックアップ時点へ復元する。
+更新時は別の作業場所で新版を事前検証する。本番へ反映するときはAPIと取込・Embedding・公開処理、その起動元を停止し、`/opt/file-scan/`直下の`config.local.yaml`・`.env`・`.env.search`を保持して、配布ソースと依存を更新する。仮想環境は最終配置先の`/opt/file-scan/.venv/`で作成・導入する。別パスで作成した仮想環境を移動して使わない。`WorkingDirectory`・`EnvironmentFile`・`ExecStart`の参照先は本書の配置へ揃え、確認後に再開する。
 
-接続キーの変更は`search.env`と呼出側を更新し、`sudo systemctl restart file-search.service`を実行する。ホットリロード・複数キーの同時有効化は未実装なので、切替時間を調整する。OpenAIキーや共通YAMLの変更もプロセス再起動が必要。systemdユニットを変更した場合は先に`daemon-reload`する。
+DB移行が必要なら事前に整合バックアップを取る。アプリだけを旧版へ戻してもDB移行が戻るとは扱わない。旧版が現在のDBと互換でない場合は、DBとstorageを同じバックアップ時点へ復元する。
+
+接続キーの変更は`.env.search`と呼出側を更新し、`sudo systemctl restart file-search.service`を実行する。ホットリロード・複数キーの同時有効化は未実装なので、切替時間を調整する。OpenAIキーや共通YAMLの変更もプロセス再起動が必要。systemdユニットを変更した場合は先に`daemon-reload`する。
 
 ## 12. バックアップ・復旧
 
@@ -448,9 +497,11 @@ BACKUP_DIR="/var/backups/file-scan/$(date -u +%Y%m%dT%H%M%SZ)"
 sudo install -d -o postgres -g postgres -m 0700 "$BACKUP_DIR"
 sudo -u postgres pg_dump --format=custom --file="$BACKUP_DIR/database.dump" file_scan
 sudo tar --acls --xattrs -cpf "$BACKUP_DIR/files.tar" -C /var/lib/file-scan storage reports
-sudo tar -cpf "$BACKUP_DIR/config.tar" -C /etc file-scan
+sudo tar -cpf "$BACKUP_DIR/config.tar" -C /opt/file-scan config.local.yaml .env .env.search
 sudo chmod 0600 "$BACKUP_DIR/database.dump" "$BACKUP_DIR/files.tar" "$BACKUP_DIR/config.tar"
 ```
+
+`config.tar`はプロジェクト直下のアプリ設定3ファイルを保存する。ソース一式や`.venv`はこの設定アーカイブへ含めない。復元時は同じ`/opt/file-scan/`直下へ戻し、4節の所有者・権限を再確認する。systemdユニット、Nginx設定・証明書、SMBマウント設定は別途保護して保管する。
 
 `database.dump`は検索表・公開コピー・Embeddingを含むDB全体を対象とする。`pg_dump`はロールを保存しないため、所有・実行ロールの再作成手順も保護して保管する。ソースの版・lock・DB拡張とGroongaの版、モデルmanifestも一緒に記録する。暗号化・別障害領域への複製・保存期間は運用基準へ合わせる。[pg_dumpの仕様](https://www.postgresql.org/docs/18/app-pgdump.html)
 
@@ -467,6 +518,6 @@ GroongaのDB自体が壊れてREINDEXもできない場合はファイルを手�
 
 ## 13. この文書で確認した範囲
 
-現行の設定ローダー、CLI、非同期DB接続、検索・出典・テストモード、`winnap`配置、固定依存、既存のVM手順と照合した。公式資料は2026-11-03に確認した。文書内のBash構文とローカル参照リンクも確認した。
+現行の`pyproject.toml`、取込・検索の設定ローダーとCLI、非同期DB接続、検索・出典・テストモード、`winnap`配置、固定依存、既存のVM手順と照合した。プロジェクトルートを`/opt/file-scan/`として、設定・`src/`・仮想環境・systemd・バックアップのパスを統一した。公式資料は2026-11-03に確認した。文書内のBash構文とローカル参照リンクも確認した。
 
 この作業では本番VM・DB・Nginx・systemdの設定変更、実資料の公開、実OpenAI呼び出しを行っていない。Ubuntu上の`systemd-analyze verify`・`nginx -t`・実検索・権限・バックアップ復元を実施し、担当者が受入結果を記録してから利用を開始する。
