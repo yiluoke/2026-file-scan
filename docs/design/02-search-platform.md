@@ -1,6 +1,6 @@
 # 検索基盤・検索API設計
 
-日本語スキャンPDFのOCR本文はRapidOCR＋ONNX Runtime CPUで抽出したsourceとして、既存の全文・ベクトル検索経路へ渡す。文字認識誤りはEmbeddingで補正されない。原本ページ・bboxを根拠として保持する。図の意味説明・Office画像OCRは未実装。実装は[日本語OCR](../implementation/rapidocr-pdf.md)を参照。
+日本語スキャンPDFのOCR本文はRapidOCR＋ONNX Runtime CPUで抽出したsourceとして、既存の全文・ベクトル検索経路へ渡す。文字認識誤りはEmbeddingで補正されない。原本ページ・bboxを根拠として保持する。設定で生成したPDF・Office画像の説明はderivedとし、原図との照合後に明示公開する。[日本語OCR](../implementation/rapidocr-pdf.md)・[画像認識](../implementation/image-analysis.md)
 
 - 作成日: 2026-10-12
 - 最終更新日: 2026-11-01

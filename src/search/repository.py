@@ -1,6 +1,6 @@
 """同一スナップショットで予定原本・採用済み候補・検索経路を読む。"""
 
-from sqlalchemy import and_, func, literal, literal_column, or_, select, text
+from sqlalchemy import and_, func, literal_column, or_, select, text
 
 from file_scan.db import tables as core
 from search import schema as s
@@ -189,8 +189,8 @@ def candidate_filter(publication_ids, filters):
         )
     if "artifact_type" in filters:
         values = filters["artifact_type"]
-        if "source" not in (values if isinstance(values, list) else [values]):
-            clauses.append(literal(False))
+        origin = func.coalesce(s.chunks.c.mappings[0]["artifact_type"].astext, "source")
+        clauses.append(origin.in_(values if isinstance(values, list) else [values]))
     return and_(*clauses)
 
 

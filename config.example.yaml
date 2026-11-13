@@ -46,6 +46,16 @@ chunk_max_characters: 1800
 chunk_max_tokens: 8191
 chunk_context_max_tokens: 1024
 
+# trueにするとingestが指定形式の対象画像をOpenAI Responses APIへ送信します。
+image_analysis:
+  enabled: false
+  formats: [pdf, xlsx, xlsm, docx]
+  model: gpt-5.4-mini-2026-03-17
+  api_key_env: OPENAI_API_KEY
+  render_office: true  # Officeの図形・グラフの表示を画像化する場合はLibreOfficeが必要
+  max_images_per_document: 20
+  timeout_seconds: 60
+
 # 有効化するとembedコマンドが抽出済みsearch_textをOpenAI APIへ送信します。
 embedding:
   enabled: false  # 実キー設定後にtrueへ変更

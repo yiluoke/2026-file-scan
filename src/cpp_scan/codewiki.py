@@ -1,4 +1,4 @@
-"""別Python環境のCodeWikiを固定版で呼ぶ。プロセス出力を通常ログへ出さない。"""
+"""固定版CodeWikiを子プロセスで呼ぶ。プロセス出力を通常ログへ出さない。"""
 
 from __future__ import annotations
 

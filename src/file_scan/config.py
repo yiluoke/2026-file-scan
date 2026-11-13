@@ -20,6 +20,7 @@ DEFAULT_EXTENSIONS = (
 )
 SUPPORTED_EXTENSIONS = frozenset((*DEFAULT_EXTENSIONS, ".markdown"))
 DEFAULT_DATABASE_URL = "postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan"
+IMAGE_ANALYSIS_FORMATS = ("pdf", "xlsx", "xlsm", "docx")
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,21 @@ class PdfOcrSettings:
     timeout_seconds: int = 1800
 
 
+@dataclass(frozen=True)
+class ImageAnalysisSettings:
+    enabled: bool = False
+    formats: tuple[str, ...] = IMAGE_ANALYSIS_FORMATS
+    model: str = "gpt-5.4-mini-2026-03-17"
+    api_key_env: str = "OPENAI_API_KEY"
+    api_key: str = field(default="", repr=False)
+    render_office: bool = True
+    max_images_per_document: int = 20
+    timeout_seconds: int = 60
+
+    def applies_to(self, file_format: str) -> bool:
+        return self.enabled and file_format in self.formats
+
+
 @dataclass
 class Settings:
     sources: list[Source] = field(default_factory=list)
@@ -81,6 +97,7 @@ class Settings:
     parse_worker_max_tasks: int = 100
     parse_worker_max_memory_mb: int = 1536
     embedding: EmbeddingSettings = field(default_factory=EmbeddingSettings)
+    image_analysis: ImageAnalysisSettings = field(default_factory=ImageAnalysisSettings)
 
 
 def _string(value: Any, field_name: str) -> str:
@@ -183,6 +200,16 @@ def validate_settings(settings: Settings) -> None:
         raise ConfigError("pdf_ocr.scaleは1以上4以下の数値にしてください")
     _integer(ocr.timeout_seconds, "pdf_ocr.timeout_seconds", 1)
     _integer(settings.parse_timeout_seconds, "parse_timeout_seconds", 1)
+    vision = settings.image_analysis
+    _boolean(vision.enabled, "image_analysis.enabled")
+    _boolean(vision.render_office, "image_analysis.render_office")
+    _string(vision.model, "image_analysis.model")
+    if not vision.formats or any(fmt not in IMAGE_ANALYSIS_FORMATS for fmt in vision.formats):
+        raise ConfigError("image_analysis.formatsにはpdf / xlsx / xlsm / docxを指定してください")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", vision.api_key_env):
+        raise ConfigError("image_analysis.api_key_envの環境変数名が不正です")
+    _integer(vision.timeout_seconds, "image_analysis.timeout_seconds", 1)
+    _integer(vision.max_images_per_document, "image_analysis.max_images_per_document", 1)
     embedding = settings.embedding
     _boolean(embedding.enabled, "embedding.enabled")
     maximum = {"text-embedding-3-small": 1536, "text-embedding-3-large": 3072}
@@ -273,6 +300,13 @@ def load_config(path: str | Path) -> Settings:
     api_key = os.environ.get(key_env) or embedding.get("api_key", "")
     if not isinstance(api_key, str) or any(char in api_key for char in "\r\n\x00"):
         raise ConfigError("embedding.api_keyの形式が不正です")
+    vision = raw.get("image_analysis", {})
+    if not isinstance(vision, dict) or set(vision) - {
+        "enabled", "formats", "model", "api_key_env", "render_office",
+        "max_images_per_document", "timeout_seconds",
+    }:
+        raise ConfigError("image_analysisの設定項目を確認してください")
+    vision_key_env = _string(vision.get("api_key_env", "OPENAI_API_KEY"), "image_analysis.api_key_env")
     settings = Settings(
         sources=sources,
         knowledge_id=_string(raw.get("knowledge_id", "default"), "knowledge_id"),
@@ -302,6 +336,17 @@ def load_config(path: str | Path) -> Settings:
         parse_workers=_integer(raw.get("parse_workers", 1), "parse_workers", 1),
         parse_worker_max_tasks=_integer(raw.get("parse_worker_max_tasks", 100), "parse_worker_max_tasks", 1),
         parse_worker_max_memory_mb=_integer(raw.get("parse_worker_max_memory_mb", 1536), "parse_worker_max_memory_mb", 128),
+        image_analysis=ImageAnalysisSettings(
+            enabled=_boolean(vision.get("enabled", False), "image_analysis.enabled"),
+            formats=tuple(_strings(vision.get("formats", list(IMAGE_ANALYSIS_FORMATS)), "image_analysis.formats")),
+            model=_string(vision.get("model", ImageAnalysisSettings.model), "image_analysis.model"),
+            api_key_env=vision_key_env,
+            api_key=os.environ.get(vision_key_env, ""),
+            render_office=_boolean(vision.get("render_office", True), "image_analysis.render_office"),
+            max_images_per_document=_integer(vision.get("max_images_per_document", 20),
+                                             "image_analysis.max_images_per_document", 1),
+            timeout_seconds=_integer(vision.get("timeout_seconds", 60), "image_analysis.timeout_seconds", 1),
+        ),
         embedding=EmbeddingSettings(
             enabled=_boolean(embedding.get("enabled", False), "embedding.enabled"),
             model=_string(embedding.get("model", "text-embedding-3-small"), "embedding.model"),

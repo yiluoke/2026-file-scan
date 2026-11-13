@@ -4,7 +4,7 @@
 * 原本バイト列の保存とDBの本文登録を分離する。
 * 時間のかかるコピー・文書解析中にはDBトランザクションを開かない。
 * 1文書のブロック／チャンクは一つのトランザクションで登録する。
-* 全てdraft。検索公開・外部APIへの送信をこの版で暗黙に行わない。
+* 全てdraft。画像の外部送信は設定で有効にした対象だけに限る。
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from file_scan.collector import ScanItem, ScanResult, collect
 from file_scan.config import Settings, validate_settings
 from file_scan.db import SCHEMA_VERSION, tables
 from file_scan.domain import Chunk, ExtractionResult
-from file_scan.storage import Storage, StoredAsset
+from file_scan.storage import Storage, StorageError, StoredAsset
 from file_scan.profiles import conversion_profile
 from file_scan.workers import ACTIVE_POOL, ParsePool
 
@@ -160,9 +160,15 @@ def _recover_jobs(conn: Connection) -> None:
 
 
 def _register_discovery(conn: Connection, settings: Settings, scan: ScanResult,
-                        scan_id: str) -> None:
+                        scan_id: str, unchanged_ids: set[str]) -> None:
     documents, memberships = tables["documents"], tables["knowledge_documents"]
     for item in scan.items:
+        if item.document_id in unchanged_ids:
+            conn.execute(memberships.update().where(
+                memberships.c.knowledge_id == settings.knowledge_id,
+                memberships.c.document_id == item.document_id,
+            ).values(last_seen_scan_id=scan_id))
+            continue
         _insert_missing(conn, documents, {"document_id": item.document_id}, {
             "source_system": item.source_id, "source_key": item.source_key,
             "source_uri": item.source_uri, "title": item.relative_path, "format": item.format,
@@ -385,6 +391,8 @@ def _export(engine: Engine, settings: Settings, generation_id: str, manifest: di
         review.extend([f"## {block['block_id']} ({block['element_type']})\n",
                        json.dumps(block["source_locations"], ensure_ascii=False) + "\n",
                        (block["content_text"] or "") + "\n"])
+        if block["element_type"] == "image_description" and block["content_data"].get("unreadable"):
+            review.append("判読不能箇所 " + block["content_data"]["unreadable"] + "\n")
     write_text(folder / "review.md", "\n".join(review))
 
 
@@ -403,9 +411,62 @@ def _cached_assets_available(engine: Engine, generation_id: str, storage: Storag
     return True
 
 
-def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -> dict:
+def _unchanged_documents(conn: Connection, settings: Settings, scan: ScanResult,
+                         hashes: dict[str, str], storage: Storage) -> dict:
+    """生成済みMarkdownと現在の正常な変換世代が一致する場合だけ再利用する。"""
+    docs, members = tables["documents"], tables["knowledge_documents"]
+    selected, generations = tables["selected_generations"], tables["extraction_generations"]
+    assets = tables["artifact_assets"]
+    revision, _ = conversion_profile(settings, "md")
+    rows = conn.execute(select(
+        docs.c.document_id, docs.c.latest_source_version, docs.c.source_uri,
+        selected.c.generation_id, generations.c.quality_summary,
+        assets.c.storage_key, assets.c.byte_size,
+    ).select_from(members.join(docs).join(selected, and_(
+        selected.c.document_id == members.c.document_id,
+        selected.c.knowledge_id == members.c.knowledge_id,
+    )).join(generations, generations.c.generation_id == selected.c.generation_id)
+        .join(assets, assets.c.asset_id == docs.c.latest_source_version)).where(
+        members.c.knowledge_id == settings.knowledge_id, members.c.included.is_(True),
+        members.c.collection_status == "available", docs.c.source_status == "available",
+        docs.c.format == "md", selected.c.conversion_revision == revision,
+        generations.c.conversion_revision == revision,
+        generations.c.processing_status == "succeeded",
+        generations.c.source_version == docs.c.latest_source_version,
+        assets.c.storage_status == "available",
+    )).mappings()
+    by_id = {row["document_id"]: row for row in rows}
+    result = {}
+    for item in scan.items:
+        row = by_id.get(item.document_id)
+        if (item.format != "md" or not row or row["source_uri"] != item.source_uri
+                or row["byte_size"] > settings.max_file_bytes
+                or row["latest_source_version"] != "sha256:" + hashes[item.relative_path]):
+            continue
+        try:
+            storage.verify(row["latest_source_version"], row["storage_key"], row["byte_size"])
+        except StorageError:
+            continue  # 既存の原本修復・破損検出経路へ戻す。
+        result[item.document_id] = {
+            **row["quality_summary"], "document_id": item.document_id, "source_id": item.source_id,
+            "relative_path": item.relative_path, "status": "unchanged", "processing_status": "succeeded",
+            "source_version": row["latest_source_version"], "generation_id": row["generation_id"],
+            "conversion_revision": revision, "source_bytes_read": 0, "temporary_bytes_written": 0,
+            "original_reused": True,
+        }
+    return result
+
+
+def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
+           verified_markdown: dict[str, str] | None = None,
+           allow_removals: bool = False) -> dict:
     """全体の失敗で既存の版を消さず、文書単位で結果を確定してレポートを返す。"""
     validate_settings(settings)
+    vision = settings.image_analysis
+    if vision.enabled and any(vision.applies_to(ext.lstrip(".")) for ext in settings.include_extensions):
+        if not vision.api_key.strip() or any(marker in vision.api_key.lower()
+                                               for marker in ("placeholder", "replace-me", "dummy", "your-key")):
+            raise PipelineError("画像認識用のAPIキーを環境変数に設定してください")
     require_schema(engine)
     report = {"run_id": str(uuid4()), "started_at": utcnow().isoformat(),
               "knowledge_id": settings.knowledge_id, "status": "succeeded", "files": []}
@@ -414,6 +475,24 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
     kb, docs, members = tables["knowledge_bases"], tables["documents"], tables["knowledge_documents"]
     generations = tables["extraction_generations"]
     with ingestion_lock(engine), ParsePool(settings) as pool:
+        scan = None
+        unchanged = {}
+        if verified_markdown is not None:
+            if len(settings.sources) != 1 or set(settings.include_extensions) != {".md"}:
+                raise PipelineError("verified_markdown_requires_dedicated_source")
+            scan = collect(settings)
+            if scan.errors or {item.relative_path for item in scan.items} != set(verified_markdown):
+                raise PipelineError("ingestion_document_set_mismatch")
+            with engine.connect() as conn:
+                if not allow_removals:
+                    seen = {item.document_id for item in scan.items}
+                    existing = conn.execute(select(docs.c.document_id).join(members).where(
+                        members.c.knowledge_id == settings.knowledge_id,
+                        members.c.included.is_(True), docs.c.source_status != "deleted",
+                    )).scalars()
+                    if any(document_id not in seen for document_id in existing):
+                        raise PipelineError("handoff_removals_require_explicit_option")
+                unchanged = _unchanged_documents(conn, settings, scan, verified_markdown, storage)
         with engine.begin() as conn:
             binding = tables["ingestion_settings"]
             _insert_missing(conn, binding, {"singleton_id": 1}, {
@@ -430,14 +509,16 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
             if (catalog["system_id"], catalog["environment"]) != (settings.system_id, settings.environment):
                 raise PipelineError("同じknowledge_idのシステム・環境を変更できません")
             _recover_jobs(conn)
-            conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id)
-                         .values(scan_status="running"))
+            if scan is None:
+                conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id)
+                             .values(scan_status="running"))
             scan_id = _start_job(conn, settings.knowledge_id, "scan",
                                  digest([settings.knowledge_id, "scan"]))
-        scan = collect(settings)
+        if scan is None:
+            scan = collect(settings)
         report["scan_errors"], report["exclusions"] = scan.errors, scan.exclusions
         with engine.begin() as conn:
-            _register_discovery(conn, settings, scan, scan_id)
+            _register_discovery(conn, settings, scan, scan_id, set(unchanged))
             deleted = _reconcile_missing(conn, settings, scan)
             scan_status = "partial" if scan.errors else "succeeded"
             # バッチ排他を持ち続けて完了した列挙なので、回収されていない自分の
@@ -447,12 +528,18 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                 jobs.c.run_id == scan_id, jobs.c.lease_version == 1, jobs.c.status == "running"
             ).values(lease_until=utcnow() + timedelta(seconds=300)))
             _finish_job(conn, scan_id, scan_status)
-            values = {"scan_status": scan_status, "catalog_revision": kb.c.catalog_revision + 1}
+            values = {"scan_status": scan_status}
+            if (verified_markdown is None or len(unchanged) != len(scan.items) or deleted
+                    or catalog["scan_status"] != scan_status):
+                values["catalog_revision"] = kb.c.catalog_revision + 1
             if not scan.errors:
                 values["last_successful_scan_at"] = utcnow()
             conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id).values(**values))
 
         for item in scan.items:
+            if item.document_id in unchanged:
+                report["files"].append(unchanged[item.document_id])
+                continue
             entry = {"document_id": item.document_id, "source_id": item.source_id,
                      "relative_path": item.relative_path, "status": "failed"}
             generation_id, job_id, stage = None, None, "collect"
@@ -468,6 +555,9 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                                         docs.c.latest_source_version == versions.c.source_version))
                         .where(docs.c.document_id == item.document_id)).mappings().first()
                 original = storage.snapshot(item, settings.max_file_bytes, settings.copy_retries, known)
+                if (verified_markdown is not None
+                        and original.asset_id != "sha256:" + verified_markdown[item.relative_path]):
+                    raise PipelineError("ingestion_markdown_hash_mismatch")
                 entry.update(source_version=original.asset_id, source_bytes_read=original.source_bytes_read,
                              temporary_bytes_written=original.temporary_bytes_written,
                              original_reused=original.reused)
@@ -533,6 +623,10 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False) -
                 entry["extraction_cached"] = result is not None
                 if result is None:
                     result = extract(original, item, settings)
+                    if vision.applies_to(item.format):
+                        from file_scan.image_analysis import analyze_images
+
+                        analyze_images(result, original.path, item.format, vision)
                 chunks = build_chunks(result.blocks, item.relative_path, settings.chunk_max_characters,
                                       settings.chunk_max_tokens, settings.chunk_context_max_tokens)
                 stored = [storage.put_bytes(asset.content, asset.mime_type) for asset in result.assets]

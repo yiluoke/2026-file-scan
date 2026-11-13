@@ -35,7 +35,7 @@ def _parser():
             command.add_argument("--generation", required=True, help="生成ID")
             command.add_argument("--retry-partial", action="store_true")
             command.add_argument("--accept-scope-change", action="store_true",
-                                 help="対象範囲の設定変更を明示的に反映（文書の削除を伴う場合あり）")
+                                 help="入力元・対象範囲の変更や既存文書の論理削除を確認して反映")
     return parser
 
 

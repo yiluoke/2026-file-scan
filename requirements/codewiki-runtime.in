@@ -1,0 +1,12 @@
+# 固定版CodeWikiのC++／JavaScript構造解析とOpenAI互換APIで使用する依存。
+# CodeWiki本体はcodewiki-source.txtから--no-depsで導入する。
+colorama
+GitPython
+networkx
+pathspec
+pydantic-ai-slim[openai]
+python-dotenv
+rich
+tree-sitter
+tree-sitter-cpp
+tree-sitter-javascript

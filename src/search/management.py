@@ -7,6 +7,7 @@ import math
 from sqlalchemy import and_, select
 
 from file_scan.db import tables as core
+from file_scan.image_analysis import METHOD
 from file_scan.pipeline import ingestion_lock
 from file_scan.profiles import digest
 from file_scan.storage import Storage
@@ -122,6 +123,7 @@ def publish(
     reviewer,
     *,
     allow_partial=False,
+    include_image_descriptions=False,
     feature_ids=(),
 ):
     """完全な世代を凍結。API呼出中やingestによる暗黙公開は行わない。"""
@@ -245,14 +247,25 @@ def publish(
             "blocks"
         ) != len(block_rows):
             raise PublicationError("generation_incomplete")
-        if not chunk_rows or any(r["artifact_type"] != "source" for r in block_rows + chunk_rows):
-            raise PublicationError("only_source_evidence_supported")
+        derived_blocks = {r["block_id"]: r for r in block_rows if r["artifact_type"] == "derived"}
+        if include_image_descriptions and any(
+            r["element_type"] != "image_description" or r["extraction_method"] != METHOD
+            for r in derived_blocks.values()
+        ):
+            raise PublicationError("unsupported_derived_evidence")
+        if not include_image_descriptions:
+            block_rows = [r for r in block_rows if r["artifact_type"] == "source"]
+            chunk_rows = [r for r in chunk_rows if r["artifact_type"] == "source"]
+        if not chunk_rows:
+            raise PublicationError("no_publishable_chunks")
         mappings = defaultdict(list)
         for row in c.execute(
             select(core["chunk_blocks"])
             .where(core["chunk_blocks"].c.generation_id == generation_id)
             .order_by(core["chunk_blocks"].c.sequence_no)
         ).mappings():
+            if row["artifact_type"] == "derived" and not include_image_descriptions:
+                continue
             mappings[row["chunk_id"]].append(
                 {
                     k: row[k]
@@ -263,7 +276,7 @@ def publish(
                         "block_char_start",
                         "block_char_end",
                     )
-                }
+                } | ({"artifact_type": "derived"} if row["artifact_type"] == "derived" else {})
             )
         by_id = {r["block_id"]: r for r in block_rows}
         for chunk in chunk_rows:
@@ -286,6 +299,7 @@ def publish(
                 block = by_id.get(m["block_id"])
                 if (
                     not block
+                    or block["artifact_type"] != chunk["artifact_type"]
                     or not block["source_locations"]
                     or not (
                         0
@@ -367,7 +381,8 @@ def publish(
             ).mappings()
         ]
         relation_data = [
-            {k: r[k] for k in ("from_block_id", "to_block_id", "relation_type")} for r in relations
+            {k: r[k] for k in ("from_block_id", "to_block_id", "relation_type")}
+            for r in relations if r["from_block_id"] in by_id and r["to_block_id"] in by_id
         ]
         assets = defaultdict(list)
         for row in c.execute(
@@ -378,6 +393,14 @@ def publish(
             assets[row["block_id"]].append(
                 {k: row[k] for k in ("occurrence_id", "asset_id", "asset_role", "source_locations")}
             )
+        if include_image_descriptions:
+            for block in derived_blocks.values():
+                parent = by_id.get(block["parent_id"])
+                image_id = block["content_data"].get("asset_id")
+                image_assets = [a for a in assets[block["parent_id"]] if a["asset_id"] == image_id]
+                if not parent or parent["artifact_type"] != "source" or not image_assets:
+                    raise PublicationError("image_description_source_missing")
+                assets[block["block_id"]] = image_assets
         frozen_blocks = [
             {
                 k: r[k]
@@ -402,7 +425,7 @@ def publish(
                         for cell in r["content_data"].get("cells", [])
                         if "coordinate" in cell
                     ],
-                },
+                } | ({"artifact_type": "derived"} if r["artifact_type"] == "derived" else {}),
             }
             for r in block_rows
         ]

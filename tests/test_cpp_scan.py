@@ -8,12 +8,13 @@ import subprocess
 import sys
 import threading
 from dataclasses import replace
+from importlib.util import find_spec
 from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 import yaml
-from sqlalchemy import select
+from sqlalchemy import event, select
 
 from cpp_scan.cli import main
 from cpp_scan.codewiki import CodeWiki
@@ -135,11 +136,11 @@ def _config(tmp_path, **values):
 def test_configuration_paths_and_complete_design_example(source_project, tmp_path):
     path = _config(tmp_path, documentation={"language": "ja", "provider": "codewiki"},
                    ingestion={"file_scan_config": "docs.yaml"},
-                   codewiki={"python": ".venv-codewiki/bin/python"})
+                   codewiki={"python": "custom/bin/python"})
     settings = load_config(path)
     assert settings.source_root == source_project.source_root
     assert settings.file_scan_config == tmp_path / "docs.yaml"
-    assert settings.codewiki.python == str(tmp_path / ".venv-codewiki/bin/python")
+    assert settings.codewiki.python == str(tmp_path / "custom/bin/python")
     assert settings.pro_mode == "reference_only"
 
 
@@ -335,6 +336,72 @@ def test_real_existing_ingestion_is_used_and_stable(source_project, tmp_path):
         engine.dispose()
 
 
+def test_handoff_requires_confirmation_for_input_root_and_document_removal(source_project, tmp_path):
+    settings = _ingestion_config(source_project, tmp_path)
+    adapter = FixtureCodeWiki()
+    engine = open_database("sqlite:///" + str(tmp_path / "documents.sqlite"))
+    migrate(engine)
+    try:
+        first = generate(settings, analyze(settings, adapter=adapter)["analysis_id"], adapter=adapter)
+        ingest(settings, first["generation_id"], engine=engine)
+        current = settings.artifact_root / "handoff/current"
+        original = {path.relative_to(current): path.read_bytes() for path in current.rglob("*.md")}
+        narrow = tmp_path / "narrow"
+        narrow.mkdir()
+        (narrow / "main.cpp").write_text("int main() { return 0; }\n")
+        changed = replace(settings, source_root=narrow)
+        other = generate(changed, analyze(changed, adapter=adapter)["analysis_id"], adapter=adapter)
+        with pytest.raises(ScanError, match="scope_change_requires"):
+            ingest(changed, other["generation_id"], engine=engine)
+        assert status(changed)["latest"]["ingest"]["planned_removals"]
+        with pytest.raises(ScanError, match="snapshot_source_root_mismatch"):
+            ingest(settings, other["generation_id"], engine=engine, accept_scope_change=True)
+        (settings.source_root / "screen.ui").unlink()
+        latest = generate(settings, analyze(settings, adapter=adapter)["analysis_id"], adapter=adapter)
+        with pytest.raises(ScanError, match="handoff_removals_require"):
+            ingest(settings, latest["generation_id"], engine=engine)
+        assert {path.relative_to(current): path.read_bytes() for path in current.rglob("*.md")} == original
+        docs = tables["documents"]
+        with engine.connect() as conn:
+            assert set(conn.execute(select(docs.c.source_status)).scalars()) == {"available"}
+        accepted = ingest(settings, latest["generation_id"], engine=engine, accept_scope_change=True)
+        assert accepted["summary"]["deleted"] > 0
+    finally:
+        engine.dispose()
+
+
+def test_reference_only_update_keeps_markdown_and_selected_generations(source_project, tmp_path):
+    settings = _ingestion_config(source_project, tmp_path)
+    adapter = FixtureCodeWiki()
+    engine = open_database("sqlite:///" + str(tmp_path / "documents.sqlite"))
+    migrate(engine)
+    try:
+        first = generate(settings, analyze(settings, adapter=adapter)["analysis_id"], adapter=adapter)
+        before = ingest(settings, first["generation_id"], engine=engine)
+        catalog = tables["knowledge_bases"]
+        with engine.connect() as conn:
+            revision = conn.execute(select(catalog.c.catalog_revision)).scalar_one()
+        pro = settings.source_root / "app.pro"
+        pro.write_text(pro.read_text() + "# コメントの変更\n")
+        second = generate(settings, analyze(settings, adapter=adapter)["analysis_id"], adapter=adapter)
+        assert second["snapshot_id"] != first["snapshot_id"]
+        assert second["document_files"] == first["document_files"]
+        statements = []
+
+        @event.listens_for(engine, "before_cursor_execute")
+        def capture(conn, cursor, statement, parameters, context, executemany):
+            statements.append(statement.lower())
+
+        after = ingest(settings, second["generation_id"], engine=engine)
+        assert after["documents"] == before["documents"]
+        assert after["summary"]["unchanged"] == len(first["document_files"])
+        assert not any("update selected_generations" in s for s in statements)
+        with engine.connect() as conn:
+            assert conn.execute(select(catalog.c.catalog_revision)).scalar_one() == revision
+    finally:
+        engine.dispose()
+
+
 def test_partial_generation_is_blocked_and_does_not_clear_handoff(source_project, tmp_path):
     settings = _ingestion_config(source_project, tmp_path)
     (settings.source_root / "screen.ui").write_text("<ui>broken\n")
@@ -421,6 +488,33 @@ def test_generated_source_links_are_validated_and_rewritten(source_project):
         generate(source_project, analysis["analysis_id"], adapter=adapter, force=True)
 
 
+def test_generated_markdown_checks_anchors_and_plain_references_without_editing_code(source_project):
+    adapter = FixtureCodeWiki()
+    original = adapter.generate
+    code = '```cpp\nauto s = "[literal](main.cpp#L999) and main.cpp:999";\n```'
+    content = ["# 起動\n\n" + code + "\n\n[起動へ](#起動) と [参照][src]\n\n[src]: main.cpp#L2\n"]
+
+    def generation(repo, output):
+        result = original(repo, output)
+        (output / "core.md").write_text(content[0], encoding="utf-8")
+        (output / "overview.md").write_text("# アプリ仕様\n\n[起動](core.md#起動)\n", encoding="utf-8")
+        return result
+
+    adapter.generate = generation
+    analysis = analyze(source_project, adapter=adapter)
+    result = generate(source_project, analysis["analysis_id"], adapter=adapter)
+    root = source_project.artifact_root / "generations" / result["generation_id"] / "documents"
+    document = root / result["codewiki_page_mapping"]["core.md"]
+    assert code in document.read_text()
+    assert "`main.cpp:2-2`" in document.read_text()
+    for value, error in (("main.cpp:999 に実装。", "out_of_range"),
+                         ("`missing.cpp:1` に実装。", "reference_missing"),
+                         ("[移動](#missing-heading)", "generated_documents_invalid")):
+        content[0] = "# 起動\n\n" + value + "\n"
+        with pytest.raises(ScanError, match=error):
+            generate(source_project, analysis["analysis_id"], adapter=adapter, force=True)
+
+
 def test_real_postgres_handoff(source_project, tmp_path, postgres_database):
     settings = _ingestion_config(source_project, tmp_path)
     adapter = FixtureCodeWiki()
@@ -429,6 +523,24 @@ def test_real_postgres_handoff(source_project, tmp_path, postgres_database):
     report = ingest(settings, generation["generation_id"], engine=postgres_database)
     assert report["status"] == "succeeded"
     assert report["summary"]["registered"] == len(generation["document_files"])
+
+    write_wiki = adapter.generate
+
+    def updated_wiki(repo, output):
+        result = write_wiki(repo, output)
+        core = output / "core.md"
+        core.write_text(core.read_text(encoding="utf-8") + "\n処理手順を追記。\n", encoding="utf-8")
+        return result
+
+    adapter.generate = updated_wiki
+    updated = generate(settings, analysis["analysis_id"], adapter=adapter, force=True)
+    updated_report = ingest(settings, updated["generation_id"], engine=postgres_database)
+    assert updated_report["status"] == "succeeded"
+    assert updated_report["summary"]["registered"] == 1
+    assert updated_report["summary"]["unchanged"] == len(generation["document_files"]) - 1
+    before = {document["path"]: document["extraction_generation_id"] for document in report["documents"]}
+    after = {document["path"]: document["extraction_generation_id"] for document in updated_report["documents"]}
+    assert {path for path in before if before[path] != after[path]} == {updated["codewiki_page_mapping"]["core.md"]}
 
 
 def test_project_lock_and_cli_errors(source_project, tmp_path, capsys):
@@ -454,33 +566,30 @@ def test_source_encoding_override_preserves_explicit_choice(source_project):
     assert text == "日本語" and info["encoding_requested"] == "cp932"
 
 
-@pytest.mark.skipif(not os.environ.get("CPP_SCAN_CODEWIKI_PYTHON"), reason="固定版CodeWiki実環境を明示した場合のみ")
+@pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
 def test_real_codewiki_structural_adapter(source_project):
     (source_project.source_root / "UPPER.CPP").write_text("void upperCaseExtension() {}\n")
-    settings = replace(source_project, codewiki=replace(source_project.codewiki,
-                       python=os.environ["CPP_SCAN_CODEWIKI_PYTHON"]))
-    result = analyze(settings)
+    assert source_project.codewiki.python == sys.executable
+    result = analyze(source_project)
     assert result["status"] == "succeeded"
-    _, analysis = load_analysis(settings, result["analysis_id"])
+    _, analysis = load_analysis(source_project, result["analysis_id"])
     assert analysis["components"]
     assert any(c["kind"] == "class" for c in analysis["components"])
     assert analysis["syntax_diagnostics"]
     assert any(c["evidence"]["path"] == "UPPER.CPP" for c in analysis["components"])
 
 
-@pytest.mark.skipif(not os.environ.get("CPP_SCAN_CODEWIKI_PYTHON"), reason="固定版CodeWiki実環境を明示した場合のみ")
+@pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
 def test_real_codewiki_syntax_failure_is_not_full_success(source_project):
     (source_project.source_root / "broken.cpp").write_text("void broken(\n")
-    settings = replace(source_project, codewiki=replace(source_project.codewiki,
-                       python=os.environ["CPP_SCAN_CODEWIKI_PYTHON"]))
-    result = analyze(settings)
+    result = analyze(source_project)
     assert result["status"] == "partial"
-    _, analysis = load_analysis(settings, result["analysis_id"])
+    _, analysis = load_analysis(source_project, result["analysis_id"])
     assert any(d["path"] == "broken.cpp" for d in analysis["syntax_diagnostics"])
     assert any(e["code"] == "codewiki_syntax_unparsed" for e in analysis["errors"])
 
 
-@pytest.mark.skipif(not os.environ.get("CPP_SCAN_CODEWIKI_PYTHON"), reason="固定版CodeWiki実環境を明示した場合のみ")
+@pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
 def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch):
     # CodeWiki・OpenAI SDK・ツール編集・JSON応答まで実行する。推論先だけローカル固定応答。
     requests = []
@@ -516,8 +625,7 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    settings = replace(source_project, codewiki=replace(source_project.codewiki,
-                       python=os.environ["CPP_SCAN_CODEWIKI_PYTHON"], timeout_seconds=30))
+    settings = replace(source_project, codewiki=replace(source_project.codewiki, timeout_seconds=30))
     monkeypatch.setenv(settings.documentation.model_env, "cpp-source-test")
     monkeypatch.setenv(settings.documentation.api_key_env, "local-fixture-key")
     monkeypatch.setenv(settings.documentation.base_url_env, f"http://127.0.0.1:{server.server_port}/v1")

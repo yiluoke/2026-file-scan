@@ -41,7 +41,7 @@
 | [pyproject.toml](../../pyproject.toml) | Pythonプロジェクト共通設定 | 依存ライブラリ、`file-scan`コマンド、pytestの探索先、ruffの検査ルールを定義する |
 | [.python-version](../../.python-version) | Python管理ツール向けの版指定 | Ubuntu 26.04標準実体に合わせた3.14.4 |
 | [ubuntu-26.04-baseline.json](../../requirements/ubuntu-26.04-baseline.json) | Ubuntu公式の版との対応表 | 索引URL・ハッシュ、標準対応版、追加依存、互換例外の理由 |
-| [ubuntu-26.04-constraints.txt](../../requirements/ubuntu-26.04-constraints.txt) | 依存解決の制約 | Ubuntu標準対応版と5件の互換例外を指定 |
+| [ubuntu-26.04-constraints.txt](../../requirements/ubuntu-26.04-constraints.txt) | 依存解決の制約 | Ubuntu対応版、互換例外、CodeWiki統合版を指定 |
 | [ubuntu-26.04-tools.in](../../requirements/ubuntu-26.04-tools.in) | 構築用Pythonツール | pip 25.1.1とsetuptools 78.1.1 |
 | [ubuntu-26.04.lock](../../requirements/ubuntu-26.04.lock) | 間接依存を含めた固定一覧 | dev・search、OSごとのCPU用PyTorch等のmarkerも含む |
 | [.gitignore](../../.gitignore) | Git管理から除外するパスの定義 | 実設定、認証情報、原本、DB、生成物、仮想環境等を除外する |
@@ -248,7 +248,7 @@ DB・保管先はアプリが管理する成果物で、抽出結果を確認す
 
 | パス | 役割 |
 | --- | --- |
-| `.venv` / `.venv-ubuntu2604/` | 通常使うPython 3.14.4の独立仮想環境。現在は`.venv`から後者へのリンク |
+| `.venv` / `.venv-unified/` | 取込・検索・CodeWikiが使うPython 3.14.4の統合仮想環境。ローカルでは`.venv`から後者へのリンク |
 | `.venv-python312-backup-20261025/` | 変更前のPython 3.12環境の保管。通常実行には使用しない |
 | `artifacts/ubuntu2604/python/` | 現環境で使用するPython 3.14.4本体。仮想環境が参照するため保持する |
 | `artifacts/ubuntu2604/`のその他 | Ubuntu公式版の調査資料、検証ログ、版照合JSON、配布wheel、構築ツールとキャッシュ |

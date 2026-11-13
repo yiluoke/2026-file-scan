@@ -74,7 +74,7 @@ Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。
 
 文書取込とは別の`cpp-scan`を追加した。`scan` → `analyze` → `generate` → `ingest`の順に、ソース棚卸し、原本固定・CodeWiki構造解析・Qt補完、日本語Markdown生成、既存file-scanでの下書き登録を行う。`.pro`の詳細評価やビルドは必須にしない。
 
-[導入・操作手順](docs/implementation/cpp-source-ingestion.md)、[ソース解析設定例](config.cpp-source.example.yaml)、[生成文書の取込設定例](config.cpp-docs.example.yaml)を参照。CodeWikiは固定コミットの専用環境で実行する。生成後の分割・DB登録・Embeddingは既存処理を使用し、Embeddingと検索公開は別途明示実行する。
+固定コミットのCodeWikiを、文書取込と同じPython 3.14の仮想環境に導入する。生成後の分割・DB登録・Embeddingは既存処理を使用し、Embeddingと検索公開は別途明示実行する。[導入・操作手順](docs/implementation/cpp-source-ingestion.md)・[ソース解析設定例](config.cpp-source.example.yaml)・[生成文書の取込設定例](config.cpp-docs.example.yaml)
 
 仕組みは[C++／Qtソース取込処理の図解PDF](output/pdf/C++・Qtソース取込処理_図解ガイド.pdf)で説明している。[Markdown版](docs/explanation/C++・Qtソース取込処理_図解ガイド.md)も同じ本文と図を含む。
 
@@ -91,7 +91,7 @@ DoclingによるPDFの段組み・表・領域座標は抽出するが、全原�
 
 収集対象はTXT・MD・XLSX・XLSM・DOCX・PDF。Markdownの別拡張子`.markdown`も明示設定できる。`include_extensions`は対応文書形式の部分集合だけを受け付け、プログラム・SQL・JSON・YAML・YML・CSV・LOG等の追加は設定エラーにする。
 
-DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`はローカル抽出までを行い、`embed`が有効な場合に抽出テキストを外部APIへ送信する。画像解析API、Dify本体、利用者別ACL、レビュー承認画面は未実装。検索APIと管理者コマンドによる明示公開は[検索APIの操作手順](docs/implementation/search-api.md)へ追加した。取り込みデータのdraftは維持する。
+DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`は文書を抽出し、画像認識を有効にした場合は対象画像の説明を生成する。`embed`は有効時に検索用テキストを外部APIへ送信する。Dify本体、利用者別ACL、レビュー承認画面は未実装。検索APIと管理者コマンドによる明示公開は[検索APIの操作手順](docs/implementation/search-api.md)へ追加した。取り込みデータのdraftは維持する。
 
 チャンク本文は既定1800文字以内、見出し・列見出しを含む検索入力は既定8191トークン以内に分割する。`cl100k_base`の実測値を`chunks.token_count`と`chunk_embeddings.input_tokens`へ保存する。表は行を優先し、後続チャンクの検索文脈にも列見出しを引き継ぐ。
 
@@ -107,7 +107,7 @@ DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・
 file-scan ingest --config config.local.yaml --retry-partial
 ```
 
-画像APIが未実装のため、再実行だけで画像の解析待ちが解消されるわけではない。詳細は[第1版の操作・実装説明](docs/implementation/first-version.md)を参照。
+画像認識は既定で無効。対象形式と外部送信の有効化は[画像認識の手順](docs/implementation/image-analysis.md)を参照。
 
 ## OpenAI Embeddingとファイルサーバー
 
@@ -135,7 +135,7 @@ pdf_ocr:
   timeout_seconds: 1800
 ```
 
-日本語RapidOCR 3.9.1＋ONNX Runtime 1.24.1をCPUで実行する。`pdf_ocr.enabled`の既定値は`true`、`mode`は`auto`、期限は1800秒。モデルの不足・改変を実行前に検出する。PDFのOCR本文も既存チャンク・Embedding経路を使用する。画像の意味説明は後続処理。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
+日本語RapidOCR 3.9.1＋ONNX Runtime 1.24.1をCPUで実行する。`pdf_ocr.enabled`の既定値は`true`、`mode`は`auto`、期限は1800秒。モデルの不足・改変を実行前に検出する。PDFのOCR本文も既存チャンク・Embedding経路を使用する。図の説明は設定で有効にできる。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
 
 PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。新規環境は[導入手順](docs/implementation/pgroonga.md)を参照。現在のComposeイメージはpgvectorのみ。検索APIは権限制御を保留したローカル試作として実装済み。[操作・公開・Dify接続手順](docs/implementation/search-api.md)を参照。
 

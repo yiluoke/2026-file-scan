@@ -73,7 +73,8 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
             )
     if not spans:
         return None, 0
-    evidence_id = digest([row["generation_id"], row.get("chunk_id"), spans, "source"])
+    origin = row["mappings"][0].get("artifact_type", "source")
+    evidence_id = digest([row["generation_id"], row.get("chunk_id"), spans, origin])
     metadata = {
         "evidence_id": evidence_id,
         "evidence_role": role,
@@ -83,19 +84,21 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
         "source_version": row["source_version"],
         "conversion_revision": row["conversion_revision"],
         "block_ids": block_ids,
-        "artifact_type": "source",
+        "artifact_type": origin,
         "publication_state": "published",
         "quality_flags": row["quality_flags"],
         "target_release": release_id,
         "score_version": "rrf-bound-v1",
         "source_locations": locations,
-        "source_spans": spans,
+        "source_spans": spans if origin == "source" else [],
         "location_granularity": "block",
         "excerpted": stop < len(body),
         "related_evidence_ids": [],
         "related_assets": assets[:10],
         "source_ref": "/sources/" + row["publication_id"],
     }
+    if origin == "derived":
+        metadata["description_spans"] = spans
     if row.get("chunk_id"):
         metadata["chunk_id"] = row["chunk_id"]
     if support:
@@ -274,6 +277,9 @@ async def assemble(connection, ranked, rows, release_id, setting, config):
             key = (row["publication_id"], block["block_id"])
             if key in seen or not block["content_text"]:
                 continue
+            origin = block["content_data"].get("artifact_type", "source")
+            if origin != hit["metadata"]["artifact_type"]:
+                continue
             if context_count >= reserved or remaining <= 0:
                 limits.add("context_limit")
                 break
@@ -288,6 +294,7 @@ async def assemble(connection, ranked, rows, release_id, setting, config):
                         "chunk_char_end": len(block["content_text"]),
                         "block_char_start": 0,
                         "block_char_end": len(block["content_text"]),
+                        "artifact_type": origin,
                     }
                 ],
                 "quality_flags": block["quality_flags"],

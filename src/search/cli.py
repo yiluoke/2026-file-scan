@@ -27,6 +27,8 @@ def parser():
             command.add_argument("--generation-id", required=True)
             command.add_argument("--reviewed-by", required=True)
             command.add_argument("--allow-partial", action="store_true")
+            command.add_argument("--include-image-descriptions", action="store_true",
+                                 help="原図と照合した画像説明を公開に含める")
             command.add_argument("--feature-id", action="append", default=[])
         if name == "serve":
             command.add_argument("--port", type=int, default=8000)
@@ -69,6 +71,7 @@ def main(argv=None):
                     args.generation_id,
                     args.reviewed_by,
                     allow_partial=args.allow_partial,
+                    include_image_descriptions=args.include_image_descriptions,
                     feature_ids=args.feature_id,
                 )
             }

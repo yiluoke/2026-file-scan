@@ -1,5 +1,7 @@
 # 検索APIの操作・実装
 
+画像認識で作成した説明は、原図と照合したうえで `publish --include-image-descriptions` を指定して公開できる。検索結果の `artifact_type: derived` と `related_assets` で由来を確認できる。[画像認識の手順](image-analysis.md)
+
 実装日：2026-10-25、検証更新：2026-10-26。文書ACL・SSOを保留した`local_prototype`。Dify本体の配備・Chatflowは別途行う。
 
 Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番環境構築手順](search-api-production.md)を参照。
@@ -72,7 +74,7 @@ file-search status --config config.local.yaml
 
 部分抽出の公開には`--allow-partial`を明示する。公開後もcoverageは`incomplete`となり、状態付きAPIだけが不足を伝えつつ根拠を返す。`--feature-id <機能ID>`を必要に応じて複数付けられる。機能ラベルを一度も付けていないナレッジへの機能フィルターは422。付与済みでも、ラベルのない資料はそのフィルターに一致しない。
 
-公開前に、現在の原本・選択世代との一致、部分抽出の承認、原本実体のハッシュ、チャンクと元ブロックの文字範囲、実入力ハッシュとベクトルを検査する。source以外の派生成果物の公開、別文書への参照展開、GitコミットURLの生成は初版対象外とする。
+公開前に、現在の原本・選択世代との一致、部分抽出の承認、原本実体のハッシュ、チャンクと元ブロックの文字範囲、実入力ハッシュとベクトルを検査する。`--include-image-descriptions`を指定すると、元画像を参照できる画像説明も公開対象に含める。
 
 検索プロファイルは作成時の保存済みEmbedding設定を使う。異なるモデルを既存ナレッジへ混ぜる変更は拒否する。モデル変更の移行は別途行う。
 

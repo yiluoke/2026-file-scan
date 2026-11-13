@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-import os
+import posixpath
 import re
 from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
+from .collector import CONFIG_EXTENSIONS, kind_for
+from .markdown import PARSER, destination, heading_anchors, links, rewrite_links, unclosed_fence
 from .store import (ScanError, digest, file_manifest, read_bytes, verify_files, write_bytes)
 
 VERSION = "japanese-spec-v1"
@@ -49,15 +51,78 @@ def validate_evidence(snapshot, qt, components) -> list[dict]:
     return errors
 
 
-def validate_markdown(root: Path) -> list[dict]:
+# 生成文書の原本参照は、相対パスと行番号（例 main.cpp:12-18）で扱う。
+_SOURCE_LOCATION = re.compile(
+    r"(?<![\w./%:=-])(?P<path>[\w./%+@-]+):"
+    r"L?(?P<first>[0-9]{1,18})(?:-L?(?P<last>[0-9]{1,18}))?(?![0-9])"
+)
+_INLINE_LOCATION = re.compile(r"(?P<path>[^:\n]+):L?(?P<first>[0-9]{1,18})(?:-L?(?P<last>[0-9]{1,18}))?")
+
+
+def _source_path(path):
+    return kind_for(path) is not None or PurePosixPath(path).suffix.lower() in CONFIG_EXTENSIONS
+
+
+def _location(entries, path, first, last):
+    source = entries.get(path)
+    if source is None:
+        raise ScanError("codewiki_source_reference_missing")
+    if not 1 <= first <= last <= source.get("line_count", 0):
+        raise ScanError("codewiki_source_reference_out_of_range")
+    return {"path": path, "sha256": source["sha256"], "start_line": first, "end_line": last}
+
+
+def _text_locations(tokens, entries):
+    for block in tokens:
+        if block.type != "inline":
+            continue
+        # リンク先は別に検証する。インラインコードで示したファイル:行も根拠として扱う。
+        for token in block.children or []:
+            if token.type not in {"text", "code_inline"}:
+                continue
+            if token.type == "code_inline":
+                whole = _INLINE_LOCATION.fullmatch(token.content)
+                matches = [whole] if whole else []
+            else:
+                matches = _SOURCE_LOCATION.finditer(token.content)
+            for match in matches:
+                path = unquote(match["path"]).removeprefix("./")
+                if path not in entries and not _source_path(path):
+                    continue
+                first = int(match["first"])
+                yield path, first, int(match["last"] or first)
+
+
+def _link_location(entries, target, origin):
+    """原本リンクの候補は、文書の隣とスナップショット直下から探す。"""
+    path = unquote(target.path)
+    candidates = (posixpath.normpath((PurePosixPath(origin).parent / path).as_posix()),
+                  path.removeprefix("./"), path.removeprefix("../"))
+    original = next((name for name in candidates if name in entries), None)
+    if original is None:
+        if _source_path(path) and kind_for(path) != "reference":
+            raise ScanError("codewiki_source_reference_missing")
+        return None
+    fragment = unquote(target.fragment)
+    lines = re.fullmatch(r"L([0-9]{1,18})(?:-L?([0-9]{1,18}))?", fragment)
+    if fragment and not lines:
+        raise ScanError("codewiki_source_reference_invalid_fragment")
+    first = int(lines[1]) if lines else 1
+    last = int(lines[2] or first) if lines else entries[original].get("line_count", 0)
+    return _location(entries, original, first, last)
+
+
+def validate_markdown(root: Path, snapshot: dict | None = None) -> list[dict]:
+    root = root.resolve()
     errors = []
     files = file_manifest(root)
     names = {item["path"] for item in files}
-    if not names or not {"overview.md", "plugins.md", "screens.md", "processes.md",
-                         "api.md", "unknowns.md"}.issubset(names):
+    if not {"overview.md", "plugins.md", "screens.md", "processes.md",
+            "api.md", "unknowns.md"}.issubset(names):
         errors.append({"code": "required_documents_missing"})
-    for item in files:
-        name = item["path"]
+    parsed_documents = {}
+    entries = {entry["path"]: entry for entry in snapshot["files"]} if snapshot is not None else None
+    for name in sorted(names):
         if not name.endswith(".md"):
             errors.append({"path": name, "code": "non_markdown_document"})
             continue
@@ -68,38 +133,36 @@ def validate_markdown(root: Path) -> list[dict]:
             continue
         if not text.strip() or "生成文書" not in text or "未レビュー" not in text:
             errors.append({"path": name, "code": "missing_document_provenance"})
-        # フェンス内のコードはリンク検査から除く。未閉鎖フェンスは文書不備。
-        fence = None
-        prose = []
-        for line in text.splitlines():
-            marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
-            if marker:
-                if fence is None:
-                    fence = marker.group(1)
-                elif marker.group(1)[0] == fence[0] and len(marker.group(1)) >= len(fence):
-                    fence = None
-                continue
-            if fence is None:
-                prose.append(line)
-        if fence:
+        tokens = PARSER.parse(text)
+        parsed_documents[name] = tokens, heading_anchors(tokens)
+        lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+        if any(token.type == "fence" and unclosed_fence(lines, token) for token in tokens):
             errors.append({"path": name, "code": "unclosed_code_fence"})
-        for match in re.finditer(r"!?\[[^\]]*\]\(([^)]+)\)", "\n".join(prose)):
-            link = match.group(1).split(' "', 1)[0].strip("<>")
-            parsed = urlsplit(link)
-            if parsed.scheme in {"http", "https", "mailto"}:
+        if entries is not None:
+            for path, first, last in _text_locations(tokens, entries):
+                try:
+                    _location(entries, path, first, last)
+                except ScanError as exc:
+                    errors.append({"path": name, "code": str(exc), "target": f"{path}:{first}-{last}"})
+    for name, (tokens, _) in parsed_documents.items():
+        for token in links(tokens):
+            url = destination(token)
+            target = urlsplit(url)
+            if target.scheme in {"http", "https", "mailto"} or (not target.scheme and target.netloc):
                 continue
-            if not parsed.path:
+            path = (root / PurePosixPath(name).parent / unquote(target.path)).resolve() if target.path else root / name
+            if target.scheme or not path.is_relative_to(root):
+                errors.append({"path": name, "code": "invalid_internal_link", "target": url})
                 continue
-            target = (root / PurePosixPath(name).parent / unquote(parsed.path)).resolve()
-            if parsed.scheme or not target.is_relative_to(root.resolve()) or not target.is_file():
-                errors.append({"path": name, "code": "invalid_internal_link", "target": link})
+            linked = parsed_documents.get(path.relative_to(root).as_posix())
+            if linked is None or (target.fragment and unquote(target.fragment) not in linked[1]):
+                errors.append({"path": name, "code": "invalid_internal_link", "target": url})
     return errors
 
 
 def format_documents(settings, snapshot, analysis, codewiki_root: Path, output: Path):
     qt, components = analysis["qt"], analysis["components"]
-    header = (f"> 生成文書・未レビュー。project: `{settings.project_id}`、"
-              f"snapshot: `{snapshot['snapshot_id']}`。解析状態: `{analysis['status']}`。\n"
+    header = (f"> 生成文書・未レビュー。project: `{settings.project_id}`。\n"
               "> ソースの記述と動作候補を整理した実装仕様です。実行時の成立と業務要件は未確認です。\n\n")
 
     def page(name, title, body):
@@ -163,37 +226,29 @@ def format_documents(settings, snapshot, analysis, codewiki_root: Path, output: 
     for path in source_pages:
         relative = path.relative_to(codewiki_root).as_posix()
         text = read_bytes(path).decode("utf-8")
-        def link(match):
-            target = match.group(2)
-            parsed = urlsplit(target)
-            if parsed.scheme or not parsed.path:
-                return match.group()
+        def replace_link(token):
+            parsed = urlsplit(destination(token))
+            if parsed.scheme or parsed.netloc or not parsed.path:
+                return None
             location = (path.parent / unquote(parsed.path)).resolve()
             if location.is_relative_to(codewiki_root.resolve()):
                 original = location.relative_to(codewiki_root).as_posix()
                 if original in mapping:
-                    new = os.path.relpath(mapping[original], PurePosixPath(mapping[relative]).parent)
-                    return match.group(1) + new.replace(os.sep, "/") + ("#" + parsed.fragment if parsed.fragment else "") + ")"
-            # CodeWikiのソースリンクは配置先が別なので、原本参照へ変換する。
-            # 明示的な相対パスと行を照合できない場合は検証失敗として残す。
-            source_name = unquote(parsed.path).replace("\\", "/")
-            alternatives = [source_name, source_name.removeprefix("../"), source_name.removeprefix("./")]
-            original = next((p for p in alternatives if p in source_entries), None)
-            if original:
-                source = source_entries[original]
-                lines = re.fullmatch(r"L(\d+)(?:-L?(\d+))?", parsed.fragment)
-                if parsed.fragment and not lines:
-                    raise ScanError("codewiki_source_reference_invalid_fragment")
-                first = int(lines.group(1)) if lines else 1
-                last = int(lines.group(2) or first) if lines else source.get("line_count", 0)
-                if not 1 <= first <= last <= source.get("line_count", 0):
-                    raise ScanError("codewiki_source_reference_out_of_range")
-                source_references.append({"document": mapping[relative], "path": original,
-                                          "sha256": source["sha256"], "start_line": first,
-                                          "end_line": last, "semantic_status": "unreviewed"})
-                return f"`{original}:{first}-{last}`"
-            return match.group()
-        text = re.sub(r"(!?\[[^\]]*\]\()([^)]+)\)", link, text)
+                    href = posixpath.relpath(mapping[original], PurePosixPath(mapping[relative]).parent)
+                    if parsed.fragment:
+                        href += "#" + parsed.fragment
+                    label = token.meta["label"].replace("\n", " ")
+                    return f"{label}({href})"
+            source = _link_location(source_entries, parsed, relative)
+            if source:
+                return f"`{source['path']}:{source['start_line']}-{source['end_line']}`"
+            return None
+
+        text = rewrite_links(text, replace_link)
+        for original, first, last in dict.fromkeys(_text_locations(PARSER.parse(text), source_entries)):
+            source_references.append({"document": mapping[relative],
+                                      **_location(source_entries, original, first, last),
+                                      "semantic_status": "unreviewed"})
         write_bytes(output / mapping[relative], (header + "> 本ページはCodeWikiが生成した説明（推定を含む）です。"
                     "根拠行との説明の一致は未確認です。\n\n" + text).encode("utf-8"))
     # Qt要素はファイル単位の安定IDで、詳細資料を分ける。
@@ -216,10 +271,10 @@ def format_documents(settings, snapshot, analysis, codewiki_root: Path, output: 
             "document_files": file_manifest(output)}
 
 
-def validate_generation(folder: Path, manifest: dict) -> None:
+def validate_generation(folder: Path, manifest: dict, snapshot: dict) -> None:
     if manifest["status"] not in {"succeeded", "partial"}:
         raise ScanError("generation_not_complete")
     verify_files(folder / "documents", manifest["document_files"])
-    errors = validate_markdown(folder / "documents")
+    errors = validate_markdown(folder / "documents", snapshot)
     if errors:
         raise ScanError("generation_document_validation_failed")

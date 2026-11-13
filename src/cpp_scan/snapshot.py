@@ -67,7 +67,8 @@ def create_snapshot(settings: Settings) -> dict:
         profile = settings.scan_profile()
         implementation = {name: bytes_hash(Path(__file__).with_name(name).read_bytes())
                           for name in ("snapshot.py", "collector.py", "text.py")}
-        identity = {"profile": profile, "implementation": implementation, "files": entries, "errors": errors,
+        source_root = str(settings.source_root.resolve())
+        identity = {"source_root": source_root, "profile": profile, "implementation": implementation, "files": entries, "errors": errors,
                     "exclusions": inventory.exclusions}
         identifier = "snap-" + digest(identity)
         destination = version_path(settings.artifact_root, "snapshots", identifier)
@@ -76,6 +77,7 @@ def create_snapshot(settings: Settings) -> dict:
             return {**manifest, "reused": True}
         manifest = {"schema_version": "cpp-snapshot-v1", "snapshot_id": identifier,
                     "project_id": settings.project_id, "created_at": now(), "profile": profile,
+                    "source_root": source_root,
                     "implementation": implementation,
                     "status": "partial" if errors else "succeeded", "files": entries,
                     "errors": errors, "exclusions": inventory.exclusions,

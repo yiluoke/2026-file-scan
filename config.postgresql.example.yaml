@@ -35,6 +35,16 @@ parse_workers: 1  # 解析プロセスの上限。文書単位で順に確定し
 parse_worker_max_tasks: 100
 parse_worker_max_memory_mb: 1536  # 文書処理後のピークRSSで交換
 
+# trueにするとingestが指定形式の対象画像をOpenAI Responses APIへ送信します。
+image_analysis:
+  enabled: false
+  formats: [pdf, xlsx, xlsm, docx]
+  model: gpt-5.4-mini-2026-03-17
+  api_key_env: OPENAI_API_KEY
+  render_office: true
+  max_images_per_document: 20
+  timeout_seconds: 60
+
 # 有効化するとembedコマンドが抽出済みsearch_textをOpenAI APIへ送信します。
 embedding:
   enabled: false  # 実キー設定後にtrueへ変更

@@ -109,7 +109,7 @@ Doclingから`torch`、`transformers`、`huggingface-hub`、`docling-core`、`do
 
 Pythonの`pgvector==0.5.1`と、DBサーバー側拡張の`pgvector 0.8.6`は別物。両方が必要であり、pipだけではDBサーバーに拡張は入らない。
 
-直接依存は`pyproject.toml`、間接依存と構築ツールは[requirements/ubuntu-26.04.lock](../../requirements/ubuntu-26.04.lock)で固定する。Ubuntuに対応パッケージのないDocling等は追加依存、標準版と依存条件が合わない5件は明示的な互換例外として管理する。全対応表・例外理由・実検証は[Python版整合の記録](ubuntu-26.04-python.md)を参照。
+直接依存は`pyproject.toml`、間接依存と構築ツールは統合lockで固定する。Ubuntuとの互換例外とCodeWiki統合で更新した依存は対応表で管理する。[統合lock](../../requirements/ubuntu-26.04.lock)・[Python版整合の記録](ubuntu-26.04-python.md)
 
 ## 3. 設定ファイルと認証情報
 
@@ -426,7 +426,7 @@ python -m pip wheel --no-deps --no-build-isolation --wheel-dir artifacts/wheelho
 導入先で新しい仮想環境を作成・有効化して実行する。wheelhouseはアプリ自身のwheelと、その依存のwheelを含めておく。
 
 ```sh
-python -m pip install --no-index --find-links artifacts/wheelhouse -c requirements/ubuntu-26.04.lock 'file-scan[dev,search]==0.1.0'
+python -m pip install --no-index --find-links artifacts/wheelhouse -r requirements/ubuntu-26.04.lock 'file-scan[dev,search]==0.1.0'
 python scripts/check_python_environment.py
 python -m pip check
 python scripts/download_docling_models.py --config config.local.yaml --verify-only
@@ -434,6 +434,19 @@ python -c "from file_scan.tokens import count_tokens; print(count_tokens('日本
 ```
 
 `TIKTOKEN_CACHE_DIR`はコピー先を指す値で読み込む。モデルの新規ダウンロードと公開サンプルの取得コマンドは省略する。Embeddingを実際に生成するには、閉域環境でもOpenAI APIへ接続できる経路が必要。
+
+C++／Qt取込を利用する場合は、準備環境で固定コミットを含むGitリポジトリを取得し、`artifacts/codewiki.git` を併せて配布する。導入先ではローカルGit URLを使い、固定コミットの記録をインストール情報へ残す。
+
+```sh
+# 接続可能な準備環境
+git clone --bare https://github.com/FSoft-AI4Code/CodeWiki.git artifacts/codewiki.git
+
+# 閉域の導入先。リポジトリのルートで実行
+codewiki_uri=$(python -c 'from pathlib import Path; print(Path("artifacts/codewiki.git").resolve().as_uri())')
+python -m pip install --no-index --no-deps --no-build-isolation \
+  "codewiki @ git+\${codewiki_uri}@1b4af43d6d20c8dbd758fe1d5f888cc6947ed11d"
+python scripts/check_python_environment.py --codewiki
+```
 
 ## 12. よくある停止箇所
 

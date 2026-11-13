@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--json", type=Path, help="照合結果の保存先")
+    parser.add_argument("--codewiki", action="store_true", help="固定版CodeWikiの版とコミットも照合")
     args = parser.parse_args()
     baseline = json.loads((ROOT / "requirements/ubuntu-26.04-baseline.json").read_text(
         encoding="utf-8"))
@@ -39,6 +40,20 @@ def main() -> int:
                          "actual": actual, "matched": matched})
         if not matched:
             failures.append(f"{requirement.name}: {actual} != {requirement.specifier}")
+    if args.codewiki:
+        from cpp_scan.codewiki_bridge import identity
+        from cpp_scan.config import CodeWikiSettings
+
+        expected = CodeWikiSettings()
+        try:
+            actual = identity()
+        except (importlib.metadata.PackageNotFoundError, OSError, ValueError, RuntimeError):
+            failures.append("CodeWikiのインストール情報を確認できません")
+        else:
+            if actual != {"version": expected.expected_version, "commit": expected.expected_commit}:
+                failures.append("CodeWikiの版またはコミットが固定値と一致しません")
+            else:
+                print(f"CodeWiki {expected.expected_version} / {expected.expected_commit}")
     report = {"python": platform.python_version(), "executable": sys.executable,
               "system": platform.system(), "machine": platform.machine(),
               "packages": packages, "failures": failures}

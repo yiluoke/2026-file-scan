@@ -2,6 +2,8 @@
 
 確認日：2026-10-25。ローカルの検証環境をPython 3.14.4へ変更し、Ubuntu 26.04の標準配布に対応するPythonライブラリの上流版へ合わせた。Ubuntu OSの起動は今回の作業に含めない。
 
+2026-11-14にCodeWikiの実行環境を統合した。現在の版は統合lockと対応表の `codewiki_unified_pin`／`codewiki_runtime_pin` を参照。共通依存は両環境で使用していた新しい方の版を採用し、`tiktoken` は `0.14.0`、`charset-normalizer` は `3.5.2`、`markdown-it-py` は `4.2.0` とした。
+
 ## 版の決め方
 
 Ubuntu公式アーカイブの`resolute`、`resolute-updates`、`resolute-security`の`main`・`universe`を照合した。初期リリースだけでなく、確認時点の通常の更新・セキュリティ更新を含む。
@@ -24,10 +26,10 @@ Ubuntu公式アーカイブの`resolute`、`resolute-updates`、`resolute-securi
 | openpyxl | 3.1.5 | python3-openpyxl |
 | python-docx | 1.2.0 | python3-docx |
 | pypdf | 6.9.2 | python3-pypdf |
-| charset-normalizer | 3.4.4 | python3-charset-normalizer |
+| charset-normalizer | 3.5.2 | python3-charset-normalizer（Ubuntu版との差は対応表に記録） |
 | Pillow | 12.1.1 | python3-pil |
 | OpenAI SDK | 2.21.0 | python3-openai |
-| tiktoken | 0.12.0 | python3-tiktoken |
+| tiktoken | 0.14.0 | python3-tiktoken（Ubuntu版との差は対応表に記録） |
 | NumPy / pandas | 2.3.5 / 2.3.3 | python3-numpy / python3-pandas |
 | PyTorch | 2.9.1 | python3-torch。Linuxでは公式CPU wheelの`2.9.1+cpu` |
 | OpenCV（通常wheel） | 4.10.0.84 | python3-opencvの4.10.0に対応するPyPI wheel版 |
@@ -66,22 +68,23 @@ python scripts/check_python_environment.py
 python -m pip check
 ```
 
-先に全依存と構築ツールを導入するため、アプリ導入のpip操作で依存の再解決や構築ツールの更新を行う必要はない。lockは検証用の`dev`・`search`も含む。LinuxのPyTorchはCUDAを含まない公式CPU wheelを使用する。現在のmacOSでは通常の2.9.1 wheelを使用し、DoclingはCPUで動作する。
+先に全依存と構築ツールを導入するため、アプリ導入のpip操作で依存の再解決や構築ツールの更新を行う必要はない。lockは`dev`・`search`とCodeWikiアダプターの依存を含む。C++／Qt取込を利用する場合は、この環境に[固定版CodeWiki本体](cpp-source-ingestion.md#導入)を追加する。LinuxのPyTorchはCUDAを含まない公式CPU wheelを使用する。現在のmacOSでは通常の2.9.1 wheelを使用し、DoclingはCPUで動作する。
 
 | ファイル | 役割 |
 | --- | --- |
 | [.python-version](../../.python-version) | Python管理ツール向けの3.14.4指定 |
 | [pyproject.toml](../../pyproject.toml) | 対応Python範囲、直接依存、構築用setuptoolsの固定 |
 | [ubuntu-26.04-baseline.json](../../requirements/ubuntu-26.04-baseline.json) | Ubuntuとの全対応表・例外・公式索引の出典 |
-| [ubuntu-26.04-constraints.txt](../../requirements/ubuntu-26.04-constraints.txt) | Ubuntu標準版と互換例外の解決制約 |
+| [ubuntu-26.04-constraints.txt](../../requirements/ubuntu-26.04-constraints.txt) | Ubuntu対応版とCodeWiki統合後の解決制約 |
 | [ubuntu-26.04-tools.in](../../requirements/ubuntu-26.04-tools.in) | pip・setuptoolsの導入版 |
+| [codewiki-runtime.in](../../requirements/codewiki-runtime.in) | CodeWikiアダプター経路の直接依存 |
 | [ubuntu-26.04.lock](../../requirements/ubuntu-26.04.lock) | 間接依存を含む固定一覧。OSごとのmarkerを含む |
 | [check_python_environment.py](../../scripts/check_python_environment.py) | 実行Pythonと、そのOSで必要な全固定依存の版を照合する |
 
 lockを更新する場合の構築ツールはuv 0.13.5を使用した。
 
 ```sh
-uv pip compile pyproject.toml requirements/ubuntu-26.04-tools.in \
+uv pip compile pyproject.toml requirements/ubuntu-26.04-tools.in requirements/codewiki-runtime.in \
   --extra dev --extra search \
   --constraint requirements/ubuntu-26.04-constraints.txt \
   --universal --python-version 3.14 --torch-backend cpu \
@@ -110,3 +113,7 @@ DBは既存のPostgreSQL 18.6＋pgvector 0.8.6＋PGroonga 4.1.0を使用。並�
 2026-11-02 日本語OCR追加後の最終確認：macOS arm64・Python 3.14.4、固定依存105件の不一致0件、pip check成功。PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0で全232テスト成功、スキップ0件。依存ライブラリ由来の非推奨警告11件。日本語スキャン／文字層との混在、全ページOCR、不良文字層置換、白紙、図の待ち、オフライン実行、モデル改変検知、設定変更後の新世代登録と再利用を確認した。Ruff・配布wheelへの両モデルlock同梱も成功。実書籍の精度、Ubuntu VM上の性能、実OpenAI API接続は未検証。詳細は[日本語OCRの実装・運用](rapidocr-pdf.md)。
 
 最終テスト結果はローカルの`artifacts/ocr-bootstrap/pytest.xml`、固定依存照合は`artifacts/ocr-bootstrap/environment-check.json`に保存した。OCR追加8依存のUbuntu標準版との対応は未調査として明示している。
+
+## CodeWiki統合後の検証
+
+2026-11-14にmacOS arm64のPython 3.14.4で統合lockを新規導入し、固定依存126件とCodeWikiのコミットの一致を確認した。PostgreSQL 18.6、pgvector 0.8.6、PGroonga 4.1.0を使用し、実PDF・OCR、取込・検索、固定版CodeWikiの構造解析とローカル応答APIによる仕様書生成を含む全292テストが成功した。Ubuntu VMでの実行と本番LLMへの接続は導入先で確認する。

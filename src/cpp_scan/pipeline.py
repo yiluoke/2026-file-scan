@@ -20,7 +20,7 @@ from .store import (ScanError, bytes_hash, digest, file_manifest, now, project_l
 
 def implementation_profile() -> dict:
     names = ("config.py", "collector.py", "snapshot.py", "text.py", "qt.py", "pipeline.py",
-             "documents.py", "codewiki.py", "codewiki_bridge.py")
+             "documents.py", "markdown.py", "codewiki.py", "codewiki_bridge.py")
     return {name: bytes_hash(Path(__file__).with_name(name).read_bytes()) for name in names}
 
 
@@ -200,13 +200,14 @@ def analyze(settings: Settings, *, snapshot_id=None, force=False, adapter=None):
         return {**manifest, "reused": False}
 
 
-def load_generation(settings, identifier):
+def load_generation(settings, identifier, *, with_snapshot=False):
     folder = version_path(settings.artifact_root, "generations", identifier)
     manifest = read_json(folder / "manifest.json")
     if manifest.get("project_id") != settings.project_id or manifest.get("generation_id") != identifier:
         raise ScanError("generation_identity_mismatch")
-    documents.validate_generation(folder, manifest)
-    return manifest
+    snapshot = load_snapshot(settings, manifest["snapshot_id"])
+    documents.validate_generation(folder, manifest, snapshot)
+    return (manifest, snapshot) if with_snapshot else manifest
 
 
 def generate(settings: Settings, analysis_id: str, *, force=False, adapter=None):
@@ -244,11 +245,11 @@ def generate(settings: Settings, analysis_id: str, *, force=False, adapter=None)
             result = documents.format_documents(settings, snapshot, analysis, output,
                                                  folder / "documents")
             errors = documents.validate_evidence(snapshot, analysis["qt"], analysis["components"])
-            errors += documents.validate_markdown(folder / "documents")
+            errors += documents.validate_markdown(folder / "documents", snapshot)
             quality = {"status": "failed" if errors else analysis["status"], "errors": errors,
                        "source_files": len(snapshot["files"]), "components": len(analysis["components"]),
                        "qt_records": len(analysis["qt"]["records"]),
-                       "qt_coverage": analysis["qt"]["coverage"], "source_reference_validation": "ranges_only",
+                       "qt_coverage": analysis["qt"]["coverage"], "source_reference_validation": "markdown_locations",
                        "cpp_syntax_diagnostics": analysis.get("syntax_diagnostics", []),
                        "semantic_claim_validation": "unreviewed", "mermaid_validation": "disabled"}
             write_json(folder / "quality-report.json", quality)

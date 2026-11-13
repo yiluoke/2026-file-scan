@@ -18,7 +18,7 @@ flowchart LR
     I --> J[embed実行時にOpenAIでベクトル化]
 ```
 
-OCRは文字の転記を行う。図の矢印や構成の意味説明、画像の直接Embeddingは行わない。Office埋込画像・単独PNG／JPEGのOCRも今回の対象外。OCR本文は`artifact_type=source`、`extraction_method=docling_cpu_rapidocr_ja`として保存し、通常本文と同じチャンク・Embedding経路を使う。OCR自体にOpenAIキーは不要で、取込中の外部OCR API呼び出しもない。
+OCRは文字の転記を行う。図の矢印や構成の意味説明、画像の直接Embeddingは行わない。Office埋込画像やPDF内の図の説明は別設定の[画像認識](image-analysis.md)で有効にできる。単独画像は文書取込の対象外。OCR本文は`artifact_type=source`、`extraction_method=docling_cpu_rapidocr_ja`として保存し、通常本文と同じチャンク・Embedding経路を使う。OCR自体にOpenAIキーは不要で、取込中の外部OCR API呼び出しもない。
 
 ## 設定
 

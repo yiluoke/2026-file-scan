@@ -50,6 +50,10 @@ def extraction_profile(settings: Settings, file_format: str) -> tuple[str, dict]
             profile["dependencies"][dependency] = importlib.metadata.version(dependency)
         except importlib.metadata.PackageNotFoundError:
             profile["dependencies"][dependency] = None
+    if settings.image_analysis.applies_to(file_format):
+        from file_scan.image_analysis import analysis_profile
+
+        profile["image_analysis"] = analysis_profile(settings.image_analysis, file_format)
     return digest(profile), profile
 
 

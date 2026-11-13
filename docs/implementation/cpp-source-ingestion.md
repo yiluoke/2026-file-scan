@@ -6,35 +6,35 @@
 
 ## 導入
 
-既存のPython 3.14環境でCLIを登録する。
+`file-scan`、`file-search`、`cpp-scan`、固定版CodeWikiは同じPython 3.14の仮想環境で動く。依存は`requirements/ubuntu-26.04.lock`で一括管理する。新規導入では、リポジトリのルートで次を実行する。
 
 ```sh
+python3.14 -m venv .venv
 source .venv/bin/activate
+python -m pip install -r requirements/ubuntu-26.04.lock
 python -m pip install --no-deps --no-build-isolation -e '.[dev,search]'
+python -m pip check
+python -m pip install --no-deps -r requirements/codewiki-source.txt
+python scripts/check_python_environment.py --codewiki
 cp config.cpp-source.example.yaml config.cpp-source.local.yaml
 cp config.cpp-docs.example.yaml config.cpp-docs.local.yaml
 cpp-scan --help
 ```
 
-CodeWikiは依存が異なるため専用環境にする。以下はPython 3.12で検証した、C++／JavaScript構造解析とOpenAI互換APIに絞ったアダプター用環境。閉域環境では接続可能な準備環境で検証し、環境とキャッシュを配布する。
+既存の `.venv` を更新する場合は、`python3.14 -m venv` と設定例のコピーを省略する。設定済みのYAMLで `codewiki.python` が旧 `.venv-codewiki` を指している場合は、その1行を削除する。以後 `cpp-scan` は自身のPythonでCodeWikiの子プロセスを起動する。依存更新により変換プロファイルが変わるため、既存ナレッジを再取込する際は新しい抽出世代と検索公開の切り替えを確認する。
+
+CodeWiki本体は `2.0.0` のコミット `1b4af43d6d20c8dbd758fe1d5f888cc6947ed11d` を使用し、実行時に照合する。統合lockにはC++／JavaScript構造解析とOpenAI互換API経路の依存を収録している。`--no-deps` でCodeWikiを導入した後の `pip check` には、MCP、他言語、他プロバイダー、レンダラーなど、今回の経路で使わない上流パッケージが不足として表示される。導入時はCodeWikiのインストール前の `pip check` と、導入後の `check_python_environment.py --codewiki` で確認する。閉域環境での準備は[オフライン導入手順](environment-setup.md#11-インターネットへ接続できない環境の場合)を参照する。
+
+トークナイザーは、オフライン実行に備えて事前に準備する。
 
 ```sh
-python3.12 -m venv .venv-codewiki
-.venv-codewiki/bin/python -m pip install --no-deps -r requirements/codewiki-source.txt
-.venv-codewiki/bin/python -m pip install -r requirements/codewiki-api.lock
 export TIKTOKEN_CACHE_DIR="$PWD/data/models/tiktoken"
-.venv-codewiki/bin/python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
-mkdir -p artifacts
-.venv-codewiki/bin/python -m pip freeze > artifacts/codewiki-environment.txt
+python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
 ```
 
 `TIKTOKEN_CACHE_DIR`は解析・生成・文書取込の実行時も設定する。トークナイザーの初回ダウンロードをオフライン運用時に行わないよう事前準備する。
 
-CodeWiki本体は`2.0.0`、コミット`1b4af43d6d20c8dbd758fe1d5f888cc6947ed11d`を採用し、実行時にインストール情報と照合する。API用lockは実際に検証した依存版を記録している。版を変更する場合は互換性を検証して設定を更新する。
-
-上記はCodeWikiが宣言する全機能の依存を入れる方法ではない。レンダラー、MCP、他言語・他プロバイダー等を除いており、`pip check`は省いた上流依存を報告する。`cpp-scan`の固定アダプター専用として利用する。標準CLIやMCPを使うため上流の全依存を導入する場合は、別環境で`pip install -r requirements/codewiki-source.txt`を行い、上流のNode.js/npm要件も満たす。
-
-Windowsでは`codewiki.python`を`.venv-codewiki/Scripts/python.exe`へ変更する。UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動作確認は未実施。
+UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動作確認は未実施。
 
 ## 設定
 
@@ -51,7 +51,7 @@ Windowsでは`codewiki.python`を`.venv-codewiki/Scripts/python.exe`へ変更す
 | `include_files` | 明示収集する設定等の相対パスglob。JSONは参照または明示指定があるものだけ |
 | `exclude_patterns` | パス・ファイル名glob。ディレクトリを指定すると配下も探索しない |
 | `max_file_bytes`／`max_files` | 上限超過を黙って切り詰めず、失敗として記録 |
-| `codewiki` | 専用Python、固定版、工程期限、LLM応答トークン数、エージェント単位のリクエスト数、深さ |
+| `codewiki` | 固定版、工程期限、LLM応答トークン数、エージェント単位のリクエスト数、深さ。`python` の既定値は `cpp-scan` の実行中のPython |
 | `documentation.*_env` | モデル・APIキー・OpenAI互換APIのbase URLを読む環境変数名 |
 | `ingestion.file_scan_config` | 生成Markdown専用の既存file-scan設定 |
 
@@ -87,17 +87,19 @@ CodeWikiの`DependencyGraphBuilder`で構造を取得し、C++字句・XML・QML
 
 `generate`は固定版CodeWikiの`CLIDocumentationGenerator`に日本語・モデル・制限を渡す。専用HOMEと一時領域を使い、利用者のCodeWiki設定を書き換えない。キーは環境からメモリーへ読み、引数・設定ファイルへ保存しない。全体、プラグイン、画面、処理・接続、API、未確認事項、ファイル別Qt補完をMarkdownへまとめる。
 
-出力一覧・ハッシュ・UTF-8・必須資料・Markdown内部リンク・抽出根拠位置を検証する。これは説明の意味の正しさを保証するものではない。CodeWiki説明は推定を含む未レビュー文書、Qtの実行時対応も未確認と記載する。
+出力一覧、ハッシュ、UTF-8、必須資料、Markdownの内部リンクと見出しを検証する。`main.cpp:12-18` のように示された根拠パスと行範囲は、固定した原本に照合する。コードブロック内の記述は原文を保持する。CodeWikiの説明と根拠の一致、Qtの実行時対応はレビューで確認する。
 
 同一入力・条件の完成済み成果物は検証して再利用する。`analyze --snapshot snap-...`で保存版を再解析でき、`analyze`／`generate`の`--force`で新しい版を作る。旧版は上書きしない。CodeWikiの`--update`は使わず、コメント・画面・参考設定の変更も検知する。CodeWikiページは所有ファイル集合等から安定名へ対応付け、構成変更時の改名はmanifestで確認できる。
 
 `ingest`は完成Markdownだけを専用収集先へ配置し、既存`file_scan.pipeline.ingest`を呼ぶ。既存の変換、分割、原本版、抽出世代、選択世代、キャッシュを利用する。**C++原本・中間JSONは既存文書パーサーへ渡さず、DBスキーマも追加しない。**
 
-プロジェクト排他、配置中断の記録、直前一式の保持を行う。DB開始後はファイルだけ旧版へ戻さない。既存DBの確定単位は1文書であり、全仕様書の同時切替・自動DBロールバックは保証しない。取込結果に生成版、文書ID、Markdownハッシュ、選択抽出世代を記録する。
+プロジェクト排他、配置中断の記録、直前一式の保持を行う。DB開始後はファイルだけ旧版へ戻さない。既存DBの確定単位は1文書であり、全仕様書の同時切替・自動DBロールバックは保証しない。対象スナップショットと全体の解析状態は生成manifestに、取込結果には生成版、文書ID、Markdownハッシュ、選択抽出世代を記録する。
 
-既定は部分失敗の受渡しを拒否する。`allow_partial_ingest: true`の場合のみ、欠落を記載した資料を下書き登録できる。この場合は欠けた文書を直前のMarkdownで保持し、取得失敗を削除扱いにしない。受渡し結果の`retained_paths`を確認する。対象範囲を変更した版は停止し、意図した変更を確認して適用する場合に`--accept-scope-change`を指定する。収集ID・ナレッジID・受渡し先の変更は拒否する。
+既定は部分失敗の受渡しを拒否する。`allow_partial_ingest: true`の場合のみ、欠落を記載した資料を下書き登録できる。この場合は欠けた文書を直前のMarkdownで保持する。受渡し結果の`retained_paths`を確認する。収集ID・ナレッジID・受渡し先の変更は拒否する。
 
-Embeddingは自動実行しない。確認後、既存設定の`embedding.enabled`と認証を設定し、`file-scan embed --config config.cpp-docs.local.yaml`を実行する。既存のpgvector、モデル・次元・入力キャッシュを使う。公開は[file-searchの管理コマンド](search-api.md)で明示する。引用先は生成Markdownであり、C++直接引用APIは追加しない。
+入力ルート・収集範囲の変更や、登録済み文書の削除候補がある場合は、配置・DB更新の前に停止する。`cpp-scan status` の `latest.ingest.planned_removals` で対象文書を確認し、意図した変更は同じ生成版の `ingest` に `--accept-scope-change` を付けて適用する。入力ルートを記録していない従来版からの初回切り替えでも、入力ルートを確認して同じオプションを指定する。
+
+Markdownの内容と変換条件が同じ取込済み文書は、選択抽出世代と既存の公開状態を維持する。従来のMarkdown本文に含まれていた版番号を外すため、導入時の再生成では内容の変更として一度更新される場合がある。更新文書は `file-scan embed --config config.cpp-docs.local.yaml` でEmbeddingを作成し、[file-searchの管理コマンド](search-api.md)で明示公開する。全件の公開を要する検索では、更新文書の再公開まで公開範囲不足になる場合がある。検索の引用先は生成Markdownとする。
 
 ## 保存先・状態
 
@@ -124,8 +126,7 @@ Mermaidの外部検証を`MERMAID_VALIDATE=0`で無効化し、図を検証済�
 ```sh
 export TIKTOKEN_CACHE_DIR="$PWD/data/models/tiktoken"
 python -m pytest tests/test_cpp_scan.py -q
-CPP_SCAN_CODEWIKI_PYTHON="$PWD/.venv-codewiki/bin/python" python -m pytest tests/test_cpp_scan.py -q
 python -m ruff check src tests scripts
 ```
 
-通常テストはCodeWiki境界だけfixtureへ置換し、原本保存・Qt補完・仕様書検証・既存の実取込を動かす。専用Pythonを明示すると固定版CodeWikiの実構造解析と、ローカル固定応答APIでの文書生成・ツール編集も検証する。実モデルによる説明の精度・費用と社内ソースの網羅率は、社内接続先を設定した後の受入確認が必要。
+テストは原本保存・Qt補完・仕様書検証・既存の実取込を動かす。同じ仮想環境にCodeWikiが入っていれば、実構造解析と、ローカル固定応答APIでの文書生成・ツール編集も実行する。実モデルによる説明の精度・費用と社内ソースの網羅率は、社内接続先を設定した後の受入確認が必要。
