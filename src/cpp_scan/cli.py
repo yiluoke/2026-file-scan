@@ -13,6 +13,16 @@ from .pipeline import analyze, generate, scan, status
 from .store import ScanError
 
 
+ERROR_HINTS = {
+    "codewiki_not_installed": "cpp-scanを実行するPython環境に固定版CodeWikiを導入してください。",
+    "ModuleNotFoundError": "統合lockの依存関係をCodeWikiの実行環境に導入してください。",
+    "codewiki_tokenizer_download_failed": "トークナイザー辞書を取得できません。準備済みの辞書がある"
+                                        "フォルダをTIKTOKEN_CACHE_DIRに指定してください。",
+    "codewiki_tokenizer_cache_invalid": "トークナイザー辞書を初期化できません。"
+                                       "TIKTOKEN_CACHE_DIRのパス・権限・辞書を確認してください。",
+}
+
+
 def _parser():
     parser = argparse.ArgumentParser(description="C++／Qt 5のソース解析・日本語仕様書生成・下書き取込")
     parser.add_argument("--version", action="version", version=__version__)
@@ -62,6 +72,8 @@ def main(argv=None):
         return 2 if result.get("status") == "partial" else 0
     except (ConfigError, ScanError) as exc:
         print(f"エラー: {exc}", file=sys.stderr)
+        if hint := ERROR_HINTS.get(str(exc)):
+            print(hint, file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("処理を中断しました。完成した旧世代は保持されています。", file=sys.stderr)

@@ -33,6 +33,19 @@ def identity():
     return {"version": distribution.version, "commit": commit}
 
 
+def prepare_tokenizer():
+    from requests.exceptions import RequestException
+    from tiktoken import get_encoding
+
+    # 固定版CodeWikiが構造解析モジュールをimportする際にも初期化する辞書。
+    try:
+        get_encoding("cl100k_base")
+    except RequestException:
+        raise RuntimeError("codewiki_tokenizer_download_failed") from None
+    except (OSError, ValueError):
+        raise RuntimeError("codewiki_tokenizer_cache_invalid") from None
+
+
 def use_responses_api():
     from codewiki.src.be import llm_services
     from codewiki.src.be.api_usage import record_response
@@ -73,11 +86,17 @@ def use_responses_api():
 
 
 def main(request):
-    info = identity()
+    try:
+        info = identity()
+    except importlib.metadata.PackageNotFoundError as exc:
+        if exc.name != "codewiki":
+            raise
+        raise RuntimeError("codewiki_not_installed") from None
     if info != {"version": request["expected_version"], "commit": request["expected_commit"]}:
         raise RuntimeError("codewiki_version_mismatch")
     if request["operation"] == "probe":
         return info
+    prepare_tokenizer()
     # 選別済み作業コピーを対象とし、拡張子の違いで補助C++ソースを黙って落とさない。
     from codewiki.src.be.dependency_analyzer.utils import patterns
     from codewiki.src.be.dependency_analyzer.analyzers.cpp import TreeSitterCppAnalyzer
@@ -160,7 +179,9 @@ if __name__ == "__main__":
     except Exception as exc:
         # 例外メッセージにソース本文やAPIキーが含まれる可能性がある。
         known = {"codewiki_version_mismatch", "llm_environment_missing",
-                 "codewiki_checkout_modified", "codewiki_generation_incomplete"}
+                 "codewiki_checkout_modified", "codewiki_generation_incomplete",
+                 "codewiki_not_installed", "codewiki_tokenizer_download_failed",
+                 "codewiki_tokenizer_cache_invalid"}
         code = str(exc) if isinstance(exc, RuntimeError) and str(exc) in known else type(exc).__name__
         response_path.write_text(json.dumps({"error": code}), encoding="utf-8")
         sys.exit(1)

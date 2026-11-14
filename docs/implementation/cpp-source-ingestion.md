@@ -34,6 +34,10 @@ python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
 
 `TIKTOKEN_CACHE_DIR`は解析・生成・文書取込の実行時も設定する。トークナイザーの初回ダウンロードをオフライン運用時に行わないよう事前準備する。
 
+`analyze` でも、CodeWikiの初期化時に `cl100k_base` の辞書を読む。`codewiki_tokenizer_download_failed` が出た場合は、接続できる環境で上のコマンドを実行し、作成されたキャッシュを実行環境へコピーして、そのフォルダを `TIKTOKEN_CACHE_DIR` に指定する。`codewiki_tokenizer_cache_invalid` が出た場合は、フォルダのパス、アクセス権、辞書を確認する。
+
+`codewiki_not_installed` や `ModuleNotFoundError` が出た場合は、`cpp-scan` を実行する仮想環境を有効にして `python scripts/check_python_environment.py --codewiki` を実行する。`codewiki_process_failed (analyze: ...)` の括弧内には工程名と例外の型が表示される。
+
 UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動作確認は未実施。
 
 ## 設定

@@ -567,7 +567,10 @@ def test_source_encoding_override_preserves_explicit_choice(source_project):
 
 
 @pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
-def test_real_codewiki_structural_adapter(source_project):
+def test_real_codewiki_structural_adapter(source_project, monkeypatch):
+    if cache_dir := os.environ.get("TIKTOKEN_CACHE_DIR"):
+        # 子プロセスは別ディレクトリで起動する。相対指定も親シェルから解決できることを確認する。
+        monkeypatch.setenv("TIKTOKEN_CACHE_DIR", os.path.relpath(cache_dir))
     (source_project.source_root / "UPPER.CPP").write_text("void upperCaseExtension() {}\n")
     assert source_project.codewiki.python == sys.executable
     result = analyze(source_project)

@@ -32,6 +32,9 @@ class CodeWiki:
                  "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
                  "TIKTOKEN_CACHE_DIR"}
         env = {k: v for k, v in os.environ.items() if k in names}
+        if cache_dir := env.get("TIKTOKEN_CACHE_DIR"):
+            # 子プロセスはソースの作業コピーで起動するため、呼出元を基準にする。
+            env["TIKTOKEN_CACHE_DIR"] = str(Path(cache_dir).expanduser().resolve())
         if operation == "generate":
             doc = settings.documentation
             for name in (doc.model_env, doc.api_key_env, doc.base_url_env):
@@ -79,10 +82,16 @@ class CodeWiki:
             result = read_json(response)
             if process.returncode != 0 or "error" in result:
                 code = result.get("error", "failed")
-                raise ScanError(code if code in {
+                if code in {
                     "codewiki_version_mismatch", "llm_environment_missing", "ModuleNotFoundError",
                     "codewiki_checkout_modified", "codewiki_generation_incomplete",
-                } else "codewiki_process_failed")
+                    "codewiki_not_installed", "codewiki_tokenizer_download_failed",
+                    "codewiki_tokenizer_cache_invalid",
+                }:
+                    raise ScanError(code)
+                detail = f": {code}" if (isinstance(code, str) and code.isascii()
+                                          and code.isidentifier() and len(code) <= 64) else ""
+                raise ScanError(f"codewiki_process_failed ({operation}{detail})")
             return result
 
     def profile(self) -> dict:
