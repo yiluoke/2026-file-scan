@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+import ssl
 import subprocess
 import sys
 from dataclasses import replace
@@ -44,6 +45,45 @@ def prepare_tokenizer():
         raise RuntimeError("codewiki_tokenizer_download_failed") from None
     except (OSError, ValueError):
         raise RuntimeError("codewiki_tokenizer_cache_invalid") from None
+
+
+def generation_error_code(error):
+    from codewiki.cli.utils.errors import IncompleteGenerationError
+    from codewiki.src.be.agent_tools.doc_guard import DocumentationWriteError
+    from httpx import TimeoutException, TransportError
+    from openai import APIConnectionError, APIStatusError, APITimeoutError
+    from pydantic_ai.exceptions import ModelHTTPError
+
+    pending = [error]
+    seen = set()
+    codes = []
+    while pending:
+        exc = pending.pop()
+        if id(exc) in seen:
+            continue
+        seen.add(id(exc))
+        if isinstance(exc, BaseExceptionGroup):
+            pending.extend(reversed(exc.exceptions))
+        if cause := exc.__cause__ or (None if exc.__suppress_context__ else exc.__context__):
+            pending.append(cause)
+
+        if isinstance(exc, (APIStatusError, ModelHTTPError)):
+            status = exc.status_code
+            if status == 429 and isinstance(exc.body, dict):
+                body = exc.body.get("error", exc.body)
+                if isinstance(body, dict) and body.get("code") == "insufficient_quota":
+                    return "codewiki_llm_quota_exhausted"
+            if 400 <= status <= 599:
+                return f"codewiki_llm_http_{status}"
+        if isinstance(exc, ssl.SSLError):
+            return "codewiki_llm_tls_failed"
+        if isinstance(exc, (APITimeoutError, TimeoutException)):
+            codes.append("codewiki_llm_timeout")
+        elif isinstance(exc, (APIConnectionError, TransportError)):
+            codes.append("codewiki_llm_connection_failed")
+        elif isinstance(exc, (IncompleteGenerationError, DocumentationWriteError)):
+            codes.append("codewiki_generation_incomplete")
+    return codes[-1] if codes else None
 
 
 def use_responses_api():
@@ -158,8 +198,13 @@ def main(request):
                   "Qtの実行時接続やプラグイン依存、業務要件・設計意図を断定しない。"
                   "qmake設定は参考情報で、条件評価・コマンド実行はしない。"
                   "Mermaid図は生成せず、文章と表で記述。日時・実行IDを見出しに含めない。")}}
-    job = CLIDocumentationGenerator(Path(request["repo"]), Path(request["output"]), config,
-                                    verbose=False, generate_html=False).generate()
+    try:
+        job = CLIDocumentationGenerator(Path(request["repo"]), Path(request["output"]), config,
+                                        verbose=False, generate_html=False).generate()
+    except Exception as exc:
+        if code := generation_error_code(exc):
+            return {"error": code}
+        raise
     status = getattr(job.status, "value", job.status)
     if status != "completed":
         raise RuntimeError("codewiki_generation_incomplete")
@@ -184,4 +229,6 @@ if __name__ == "__main__":
                  "codewiki_tokenizer_cache_invalid"}
         code = str(exc) if isinstance(exc, RuntimeError) and str(exc) in known else type(exc).__name__
         response_path.write_text(json.dumps({"error": code}), encoding="utf-8")
+        sys.exit(1)
+    if "error" in result:
         sys.exit(1)

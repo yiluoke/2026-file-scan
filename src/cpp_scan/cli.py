@@ -20,6 +20,16 @@ ERROR_HINTS = {
                                         "フォルダをTIKTOKEN_CACHE_DIRに指定してください。",
     "codewiki_tokenizer_cache_invalid": "トークナイザー辞書を初期化できません。"
                                        "TIKTOKEN_CACHE_DIRのパス・権限・辞書を確認してください。",
+    "codewiki_llm_tls_failed": "LLMへのHTTPS接続でTLSエラーが発生しました。"
+                               "社内CAバンドルとSSL_CERT_FILEを確認してください。",
+    "codewiki_llm_connection_failed": "LLMに接続できません。ベースURLとネットワーク経路を確認してください。",
+    "codewiki_llm_timeout": "LLMへのリクエストがタイムアウトしました。",
+    "codewiki_llm_http_400": "APIがリクエストを受け付けませんでした。モデルとAPI方式を確認してください。",
+    "codewiki_llm_http_401": "API認証に失敗しました。仕様書生成用のAPIキーを確認してください。",
+    "codewiki_llm_http_403": "APIへのアクセスが拒否されました。プロジェクトの権限を確認してください。",
+    "codewiki_llm_http_404": "APIがモデルまたはエンドポイントを見つけられません。モデルIDとベースURLを確認してください。",
+    "codewiki_llm_http_429": "APIの利用上限に達しました。レート制限と利用枠を確認してください。",
+    "codewiki_llm_quota_exhausted": "APIの利用枠が不足しています。プロジェクトの請求設定と利用枠を確認してください。",
 }
 
 

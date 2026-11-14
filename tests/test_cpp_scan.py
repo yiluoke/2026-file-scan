@@ -593,13 +593,14 @@ def test_real_codewiki_syntax_failure_is_not_full_success(source_project):
 
 
 @pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
-@pytest.mark.parametrize(("model", "endpoint"), [
-    ("cpp-source-test", "/v1/chat/completions"),
-    ("gpt-6.1-terra", "/v1/responses"),
+@pytest.mark.parametrize(("model", "endpoint", "http_status"), [
+    ("cpp-source-test", "/v1/chat/completions", 200),
+    ("gpt-6.1-terra", "/v1/responses", 200),
+    ("gpt-6.1-terra", "/v1/responses", 401),
 ])
-def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch, model, endpoint):
+def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch, model, endpoint, http_status):
     # CodeWiki・OpenAI SDK・ツール編集・JSON応答まで実行する。推論先だけローカル固定応答。
-    if model == "gpt-6.1-terra":
+    if model == "gpt-6.1-terra" and http_status == 200:
         # 分類を実行するサイズにし、小さいファイルは最終的に同じモジュールにまとめる。
         assignments = "    value += 123456;\n" * 6000
         (source_project.source_root / "large.cpp").write_text(
@@ -648,9 +649,12 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
             if self.path != endpoint:
                 self.send_error(404)
                 return
-            result = responses_reply(payload) if endpoint == "/v1/responses" else chat_reply(payload)
+            if http_status == 401:
+                result = {"error": {"message": "response-body-not-for-logs", "code": "invalid_api_key"}}
+            else:
+                result = responses_reply(payload) if endpoint == "/v1/responses" else chat_reply(payload)
             data = json.dumps(result).encode()
-            self.send_response(200)
+            self.send_response(http_status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
@@ -668,6 +672,11 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
     monkeypatch.setenv(settings.documentation.base_url_env, f"http://127.0.0.1:{server.server_port}/v1")
     try:
         analysis = analyze(settings)
+        if http_status == 401:
+            with pytest.raises(ScanError, match="^codewiki_llm_http_401$"):
+                generate(settings, analysis["analysis_id"])
+            assert status(settings)["latest"]["generate"]["error"] == "codewiki_llm_http_401"
+            return
         result = generate(settings, analysis["analysis_id"])
         assert result["status"] == "succeeded"
         assert requests and all(path == endpoint and body["model"] == model for path, body in requests)

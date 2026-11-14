@@ -36,6 +36,8 @@ python -c 'import tiktoken; tiktoken.get_encoding("cl100k_base")'
 
 `analyze` でも、CodeWikiの初期化時に `cl100k_base` の辞書を読む。`codewiki_tokenizer_download_failed` が出た場合は、接続できる環境で上のコマンドを実行し、作成されたキャッシュを実行環境へコピーして、そのフォルダを `TIKTOKEN_CACHE_DIR` に指定する。`codewiki_tokenizer_cache_invalid` が出た場合は、フォルダのパス、アクセス権、辞書を確認する。
 
+辞書の初回取得で `SSLError` が出た場合も、準備済みキャッシュをコピーすれば `analyze` で辞書を再取得する必要はない。コピーするファイルは `cl100k_base` 用の `9b5ad71b2ce5302211f9c61530b329a4922fc6a4`。ファイル名を保持し、`TIKTOKEN_CACHE_DIR` にはその親フォルダを指定する。準備環境でも `CERTIFICATE_VERIFY_FAILED` が出て、組織のCAが必要な場合は、組織から配布されたCAバンドルのパスを `REQUESTS_CA_BUNDLE` に設定して取得する。
+
 `codewiki_not_installed` や `ModuleNotFoundError` が出た場合は、`cpp-scan` を実行する仮想環境を有効にして `python scripts/check_python_environment.py --codewiki` を実行する。`codewiki_process_failed (analyze: ...)` の括弧内には工程名と例外の型が表示される。
 
 UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動作確認は未実施。
@@ -88,6 +90,10 @@ export CPP_SCAN_LLM_BASE_URL=https://api.openai.com/v1
 
 `gpt-6.1-terra` を指定すると、モジュール分類とツールを使う仕様書生成は Responses API (`/v1/responses`) に切り替わる。`store: false` を指定し、ツールの実行結果と継続に必要な暗号化済み推論情報を次のリクエストに含める。他のモデルIDは従来のChat Completions経路を使用する。[GPT-6.1 TerraのAPI仕様](https://developers.openai.com/api/docs/models/gpt-6.1-terra)
 
+辞書の取得には `REQUESTS_CA_BUNDLE`、Python OpenAI SDKのHTTPS接続には `SSL_CERT_FILE` または `SSL_CERT_DIR` を使う。後者の両方が未設定の場合、`cpp-scan generate` は `REQUESTS_CA_BUNDLE` のCAをOpenAI SDKにも渡す。`codewiki_llm_tls_failed` が出た場合は、接続先の証明書を検証できるCAがバンドルに含まれているか確認する。[HTTPXの環境変数](https://www.python-httpx.org/environment_variables/#ssl_cert_file)
+
+LLM接続時の失敗は `codewiki_llm_connection_failed`、`codewiki_llm_timeout`、`codewiki_llm_http_401` などで表示する。HTTP 401は認証、403は権限、404はモデルまたは接続先、429はレート制限や利用枠を確認する。`codewiki_llm_quota_exhausted` が出た場合はAPIプロジェクトの請求設定と利用枠を確認する。
+
 ## 実行順
 
 ```sh
@@ -97,8 +103,11 @@ cpp-scan scan --config config.cpp-source.local.yaml
 # 2. 原本固定・CodeWiki構造解析・Qt補完。LLM・DB接続なし。
 cpp-scan analyze --config config.cpp-source.local.yaml
 
-# 3. 上のJSONに表示されたanalysis_idを指定。LLMへ送信する段階。
-cpp-scan generate --config config.cpp-source.local.yaml --analysis analysis-...
+# 3. 保存済みの解析IDを取得して仕様書を生成する。LLMへ送信する段階。
+analysis_id=$(cpp-scan status --config config.cpp-source.local.yaml | \
+  python -c 'import json, sys; print(json.load(sys.stdin)["selected"].get("analysis", ""))') &&
+  [ -n "$analysis_id" ] &&
+  cpp-scan generate --config config.cpp-source.local.yaml --analysis "$analysis_id"
 
 # 4. 既存DBを事前準備。初期化済みの環境では再実行不要。
 file-scan init-db --config config.cpp-docs.local.yaml
@@ -107,6 +116,8 @@ file-scan init-db --config config.cpp-docs.local.yaml
 cpp-scan ingest --config config.cpp-source.local.yaml --generation gen-...
 cpp-scan status --config config.cpp-source.local.yaml
 ```
+
+`generate` の `--analysis` には `analyze` の出力にある `analysis_id` の値全体を指定する。形式は `analysis-` に続く32桁の小文字16進数。手入力する場合も、表示された値を省略せずに使う。`invalid_version_id` が出た場合は `--analysis` に渡した値の形式を確認する。上のコマンドは同じ設定で保存済みの解析IDを読み込むため、解析の再実行を省ける。
 
 `analyze`は安定コピー、原本ハッシュ、UTF-8作業コピー、文字コードと行・バイト位置対応を保存する。デコードできない原本も保持する。再度ファイル一覧と内容を照合して収集中の変化を検出する。通常フォルダは全ファイルが同一時点であることを保証しないため、固定したGitアーカイブ等を推奨する。
 

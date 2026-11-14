@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import subprocess
 import tempfile
@@ -32,10 +33,14 @@ class CodeWiki:
                  "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
                  "TIKTOKEN_CACHE_DIR"}
         env = {k: v for k, v in os.environ.items() if k in names}
-        if cache_dir := env.get("TIKTOKEN_CACHE_DIR"):
-            # 子プロセスはソースの作業コピーで起動するため、呼出元を基準にする。
-            env["TIKTOKEN_CACHE_DIR"] = str(Path(cache_dir).expanduser().resolve())
+        # 子プロセスはソースの作業コピーで起動するため、呼出元を基準にする。
+        for name in ("TIKTOKEN_CACHE_DIR", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR"):
+            if value := env.get(name):
+                env[name] = str(Path(value).expanduser().resolve())
         if operation == "generate":
+            if env.get("REQUESTS_CA_BUNDLE") and not (env.get("SSL_CERT_FILE") or env.get("SSL_CERT_DIR")):
+                bundle = Path(env["REQUESTS_CA_BUNDLE"])
+                env["SSL_CERT_DIR" if bundle.is_dir() else "SSL_CERT_FILE"] = str(bundle)
             doc = settings.documentation
             for name in (doc.model_env, doc.api_key_env, doc.base_url_env):
                 value = os.environ.get(name, "")
@@ -87,7 +92,11 @@ class CodeWiki:
                     "codewiki_checkout_modified", "codewiki_generation_incomplete",
                     "codewiki_not_installed", "codewiki_tokenizer_download_failed",
                     "codewiki_tokenizer_cache_invalid",
+                    "codewiki_llm_tls_failed", "codewiki_llm_connection_failed",
+                    "codewiki_llm_timeout", "codewiki_llm_quota_exhausted",
                 }:
+                    raise ScanError(code)
+                if isinstance(code, str) and re.fullmatch(r"codewiki_llm_http_[45][0-9]{2}", code):
                     raise ScanError(code)
                 detail = f": {code}" if (isinstance(code, str) and code.isascii()
                                           and code.isidentifier() and len(code) <= 64) else ""
