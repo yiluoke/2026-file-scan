@@ -590,28 +590,62 @@ def test_real_codewiki_syntax_failure_is_not_full_success(source_project):
 
 
 @pytest.mark.skipif(find_spec("codewiki") is None, reason="固定版CodeWikiを同じ環境に導入すると実行")
-def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch):
+@pytest.mark.parametrize(("model", "endpoint"), [
+    ("cpp-source-test", "/v1/chat/completions"),
+    ("gpt-6.1-terra", "/v1/responses"),
+])
+def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch, model, endpoint):
     # CodeWiki・OpenAI SDK・ツール編集・JSON応答まで実行する。推論先だけローカル固定応答。
+    if model == "gpt-6.1-terra":
+        # 分類を実行するサイズにし、小さいファイルは最終的に同じモジュールにまとめる。
+        assignments = "    value += 123456;\n" * 6000
+        (source_project.source_root / "large.cpp").write_text(
+            f"int large(int value) {{\n{assignments}    return value;\n}}\n", encoding="utf-8")
     requests = []
+    markdown = "# 全体実装仕様\n\nQtのプラグイン宣言と画面を持つ解析用アプリです。\n"
+    arguments = json.dumps({"working_dir": "docs", "command": "create", "path": "overview.md",
+                            "file_text": markdown}, ensure_ascii=False)
+    call_id = "call_write_fixture"
+    function = {"name": "str_replace_editor", "arguments": arguments}
+    reasoning = {"type": "reasoning", "id": "rs_fixture", "summary": [],
+                 "encrypted_content": "encrypted_fixture"}
+
+    def responses_reply(payload):
+        has_tools = bool(payload.get("tools"))
+        returned = has_tools and any(item.get("type") == "function_call_output" for item in payload["input"])
+        if not has_tools or returned:
+            answer = "仕様書を作成しました。" if returned else "<GROUPED_COMPONENTS>{}</GROUPED_COMPONENTS>"
+            output = [{"type": "message", "id": "msg_fixture", "role": "assistant", "status": "completed",
+                       "content": [{"type": "output_text", "text": answer, "annotations": []}]}]
+        else:
+            output = [reasoning, {"type": "function_call", "id": "fc_fixture", "call_id": call_id,
+                                  "status": "completed", **function}]
+        return {"id": "resp_fixture", "object": "response", "created_at": 1, "model": model,
+                "status": "completed", "output": output,
+                "usage": {"input_tokens": 10, "output_tokens": 10, "total_tokens": 20,
+                          "input_tokens_details": {"cached_tokens": 0},
+                          "output_tokens_details": {"reasoning_tokens": 2}}}
+
+    def chat_reply(payload):
+        if payload.get("tools") and not any(m["role"] == "tool" for m in payload["messages"]):
+            message = {"role": "assistant", "content": None,
+                       "tool_calls": [{"id": call_id, "type": "function", "function": function}]}
+            finish = "tool_calls"
+        else:
+            message = {"role": "assistant", "content": "仕様書を作成しました。"}
+            finish = "stop"
+        return {"id": "chatcmpl-fixture", "object": "chat.completion", "created": 1,
+                "model": model, "choices": [{"index": 0, "message": message, "finish_reason": finish}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}}
+
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            requests.append(payload)
-            if payload.get("tools") and not any(m["role"] == "tool" for m in payload["messages"]):
-                message = {"role": "assistant", "content": None, "tool_calls": [{
-                    "id": "call_write_fixture", "type": "function", "function": {
-                        "name": "str_replace_editor", "arguments": json.dumps({
-                            "working_dir": "docs", "command": "create", "path": "overview.md",
-                            "file_text": "# 全体実装仕様\n\nQtのプラグイン宣言と画面を持つ解析用アプリです。\n",
-                        }, ensure_ascii=False)}}]}
-                finish = "tool_calls"
-            else:
-                message = {"role": "assistant", "content": "# 全体実装仕様\n\n仕様書を作成しました。"}
-                finish = "stop"
-            result = {"id": "chatcmpl-fixture", "object": "chat.completion", "created": 1,
-                      "model": "cpp-source-test", "choices": [{"index": 0, "message": message,
-                      "finish_reason": finish}], "usage": {"prompt_tokens": 10,
-                      "completion_tokens": 10, "total_tokens": 20}}
+            requests.append((self.path, payload))
+            if self.path != endpoint:
+                self.send_error(404)
+                return
+            result = responses_reply(payload) if endpoint == "/v1/responses" else chat_reply(payload)
             data = json.dumps(result).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -626,16 +660,26 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     settings = replace(source_project, codewiki=replace(source_project.codewiki, timeout_seconds=30))
-    monkeypatch.setenv(settings.documentation.model_env, "cpp-source-test")
+    monkeypatch.setenv(settings.documentation.model_env, model)
     monkeypatch.setenv(settings.documentation.api_key_env, "local-fixture-key")
     monkeypatch.setenv(settings.documentation.base_url_env, f"http://127.0.0.1:{server.server_port}/v1")
     try:
         analysis = analyze(settings)
         result = generate(settings, analysis["analysis_id"])
         assert result["status"] == "succeeded"
-        assert requests and all(r["model"] == "cpp-source-test" for r in requests)
+        assert requests and all(path == endpoint and body["model"] == model for path, body in requests)
         root = settings.artifact_root / "generations" / result["generation_id"]
-        assert (root / "documents/wiki/overview.md").is_file()
+        assert markdown in (root / "documents/wiki/overview.md").read_text(encoding="utf-8")
+        if endpoint == "/v1/responses":
+            assert all(body["store"] is False and body["max_output_tokens"] == settings.codewiki.max_tokens
+                       for _, body in requests)
+            assert any(not body.get("tools") and "GROUPED_COMPONENTS" in body["input"] for _, body in requests)
+            first, second = [body for _, body in requests if body.get("tools")]
+            assert any(tool["type"] == "function" and tool["name"] == function["name"]
+                       for tool in first["tools"])
+            assert reasoning in second["input"]
+            assert any(item["type"] == "function_call_output" and item["call_id"] == call_id
+                       and "created" in item["output"].lower() for item in second["input"] if "type" in item)
     finally:
         server.shutdown()
         server.server_close()

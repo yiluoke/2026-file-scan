@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 
@@ -30,6 +31,45 @@ def identity():
         if dirty.stdout.strip():
             raise RuntimeError("codewiki_checkout_modified")
     return {"version": distribution.version, "commit": commit}
+
+
+def use_responses_api():
+    from codewiki.src.be import llm_services
+    from codewiki.src.be.api_usage import record_response
+    from pydantic_ai.models.openai import OpenAIResponsesModel
+    from pydantic_ai.profiles.openai import openai_model_profile
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    def responses_model(config, model_name):
+        # The pinned pydantic-ai predates GPT-6 model profiles.
+        profile = replace(openai_model_profile(model_name),
+                          openai_supports_encrypted_reasoning_content=True)
+        return OpenAIResponsesModel(
+            model_name,
+            provider=OpenAIProvider(base_url=config.llm_base_url, api_key=config.llm_api_key),
+            profile=profile,
+            settings={"max_tokens": config.max_tokens, "extra_body": {"store": False}},
+        )
+
+    def complete(prompt, config, model=None, system_prompt=None):
+        model_name = model or config.main_model
+        with llm_services.create_openai_client(config) as client:
+            response = client.responses.create(
+                model=model_name, input=prompt, instructions=system_prompt,
+                max_output_tokens=config.max_tokens, store=False,
+            )
+        usage = response.usage
+        if usage is not None:
+            usage = {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens,
+                     "cache_read_tokens": getattr(usage.input_tokens_details, "cached_tokens", 0)}
+        record_response(usage, model_name, model=response.model)
+        return response.output_text or None
+
+    # Install these before the fixed CodeWiki generator imports its model factories.
+    # The subprocess exits after one job, so other integrations keep their original path.
+    llm_services.create_main_model = lambda config: responses_model(config, config.main_model)
+    llm_services.create_fallback_model = lambda config: responses_model(config, config.fallback_model)
+    llm_services.call_llm = complete
 
 
 def main(request):
@@ -77,12 +117,14 @@ def main(request):
             nodes.append(data)
         return {"identity": info, "components": sorted(nodes, key=lambda n: n["id"]),
                 "leaf_nodes": leaves, "syntax_diagnostics": diagnostics}
-    from codewiki.cli.adapters.doc_generator import CLIDocumentationGenerator
     doc = request["documentation"]
     model, key, base = [os.environ.get(doc[name], "")
                         for name in ("model_env", "api_key_env", "base_url_env")]
     if not all((model, key, base)):
         raise RuntimeError("llm_environment_missing")
+    if model == "gpt-6.1-terra":
+        use_responses_api()
+    from codewiki.cli.adapters.doc_generator import CLIDocumentationGenerator
     config = {"provider": "openai-compatible", "base_url": base, "api_key": key,
               "main_model": model, "cluster_model": model, "fallback_model": model,
               "max_tokens": request["limits"]["max_tokens"],

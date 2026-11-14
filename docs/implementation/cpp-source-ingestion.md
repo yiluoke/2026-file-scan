@@ -38,7 +38,21 @@ UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動
 
 ## 設定
 
-相対パスは設定ファイルの所在が基準。ソース専用設定の主な項目は次のとおり。
+相対パスは設定ファイルの所在が基準。3つの設定例には、各処理の運用項目を記載している。
+
+| 本番設定 | 指定する項目 |
+| --- | --- |
+| `config.local.yaml` | 一般文書の収集元・除外・拡張子、一般文書用のID、原本保管先・レポート先、PDF・OCR・画像解析の有効化、Embeddingの有効化 |
+| `config.cpp-source.local.yaml` | C++／Qtの `project_id`、原本フォルダ `source_root`、成果物フォルダ `artifact_root`、文字コード・収集範囲・上限、`codewiki` と `documentation`。DB取込まで行う場合は `ingestion.file_scan_config` で生成文書の設定を参照する |
+| `config.cpp-docs.local.yaml` | 生成仕様書専用の `knowledge_id`・`source_id`、収集元、`.md` の拡張子指定、原本保管先・レポート先、Embeddingの有効化 |
+
+一般文書と生成仕様書で同じDBを使う場合、接続先は環境変数 `FILE_SCAN_DATABASE_URL` の1か所で設定する。生成仕様書側で `database_url` を省略した場合、環境変数が未設定のときは組み込みのローカルDB接続先を使う。`storage_dir` は両方のYAMLに記載し、同じDBを使う場合は同じ実パスを指定する。`report_dir`、`knowledge_id`、`source_id` は用途ごとに設定する。
+
+生成仕様書の設定例ではEmbeddingのモデル・次元数・キーの環境変数名に組み込みの値を使う。モデルは `text-embedding-3-small`、次元数は1536、キーの環境変数名は `OPENAI_API_KEY`。一般文書側でこれらを変更した場合、生成仕様書にも同じ変更を適用するには、生成仕様書側のYAMLにも指定する。`embedding.enabled` と `sources[].recursive` はそれぞれの設定ファイルで指定する。
+
+稼働済み環境では既存のYAMLを使い続けられる。設定を整理する場合も、使用中のID・パスと既定値を上書きしている項目は引き継ぐ。
+
+C++／Qtの主な設定は以下のとおり。
 
 | 項目 | 内容 |
 | --- | --- |
@@ -50,16 +64,25 @@ UNCはWindows、Ubuntu VMではマウント先を使う。Windows実機での動
 | `include_tests`／`include_third_party` | 既定は除外。既知ディレクトリ名で判断するので独自配置は追加除外する |
 | `include_files` | 明示収集する設定等の相対パスglob。JSONは参照または明示指定があるものだけ |
 | `exclude_patterns` | パス・ファイル名glob。ディレクトリを指定すると配下も探索しない |
-| `max_file_bytes`／`max_files` | 上限超過を黙って切り詰めず、失敗として記録 |
+| `max_file_bytes`／`max_files` | C++原本は既定で1件10 MiB、最大5万件。文書取込の `max_file_bytes` は別設定で、既定は1件100 MiB |
 | `codewiki` | 固定版、工程期限、LLM応答トークン数、エージェント単位のリクエスト数、深さ。`python` の既定値は `cpp-scan` の実行中のPython |
-| `documentation.*_env` | モデル・APIキー・OpenAI互換APIのbase URLを読む環境変数名 |
+| `documentation.*_env` | 仕様書生成の既定は `CPP_SCAN_LLM_MODEL`、`CPP_SCAN_LLM_API_KEY`、`CPP_SCAN_LLM_BASE_URL`。既存の環境変数名に合わせる場合に指定する |
 | `ingestion.file_scan_config` | 生成Markdown専用の既存file-scan設定 |
 
 `ui_mode`は注記として保持し、初期版は指定値にかかわらずWidgets／QMLを検出する。`.pro/.pri/.prf`は参考入力として保存・更新検知し、評価しない。
 
-文書取込設定では`sources`を専用`handoff/current`の1件、`include_extensions`を`[.md]`にする。`source_id`・`knowledge_id`はコード仕様専用の固定IDとする。既存DBを共用するときの`storage_dir`はそのDBの既存設定と一致させる。ソース原本保管領域とは別の役割である。
+生成仕様書の `sources[0].root` は、C++／Qt設定の `artifact_root` 配下の `handoff/current` を指す。`artifact_root` を変更したときは取込側の `root` も合わせる。受渡しは収集元1件、再帰あり（既定）、`include_extensions: [.md]`、除外なしを前提とする。
 
-社内のモデル名・APIキー・base URLを、設定した環境変数名に設定する。`.env`は自動読込せず、YAMLの`${...}`も展開しない。`generate`だけがLLM認証を必要とし、接続先が明示されていなければ実行しない。初期版のモデル接続はOpenAI互換APIに対応する。
+社内のモデル名・APIキー・OpenAI互換APIのベースURLを、仕様書生成用の環境変数に設定する。`.env.example` を参照し、`.env` を使う場合は実行前にシェルへ読み込んで変数をエクスポートする。
+
+OpenAI APIに直接接続してGPT-6.1 Terraを使う場合は、次の値と `CPP_SCAN_LLM_API_KEY` にOpenAIのAPIキーを設定する。
+
+```sh
+export CPP_SCAN_LLM_MODEL=gpt-6.1-terra
+export CPP_SCAN_LLM_BASE_URL=https://api.openai.com/v1
+```
+
+`gpt-6.1-terra` を指定すると、モジュール分類とツールを使う仕様書生成は Responses API (`/v1/responses`) に切り替わる。`store: false` を指定し、ツールの実行結果と継続に必要な暗号化済み推論情報を次のリクエストに含める。他のモデルIDは従来のChat Completions経路を使用する。[GPT-6.1 TerraのAPI仕様](https://developers.openai.com/api/docs/models/gpt-6.1-terra)
 
 ## 実行順
 

@@ -11,6 +11,7 @@ search:
 # ローカル検証もPostgreSQL＋pgvectorを使います。
 # FILE_SCAN_DATABASE_URLを設定すると、以下の値より環境変数が優先されます。
 database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan
+# C++仕様書と同じDBを共用する場合、両方のstorage_dirを同じ実パスに設定する。
 storage_dir: artifacts/storage
 report_dir: artifacts/reports
 

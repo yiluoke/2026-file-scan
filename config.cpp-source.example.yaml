@@ -1,21 +1,23 @@
-# ソース解析専用。現在のfile-scan設定とは別ファイル。
+# C++／Qtの原本棚卸し・解析・仕様書生成。相対パスはこのYAMLの所在が基準。
 schema_version: cpp-scan-v1
 project_id: qt5-sample
 source_root: examples/qt5-source
 artifact_root: artifacts/cpp-scan/qt5-sample
-source_encoding: auto
+
+source_encoding: auto  # UTF-8優先、失敗時はfallback_encodingを使用
 fallback_encoding: cp932
-encoding_overrides: {}
+encoding_overrides: {}  # 例 {'legacy/*.cpp': cp932}
 ui_mode: auto
 pro_mode: reference_only
 include_tests: false
 include_third_party: false
 include_files: []
-exclude_patterns: []
+exclude_patterns: []  # 例 ['generated/**']
 max_file_bytes: 10485760
 max_files: 50000
 copy_retries: 2
 allow_partial_ingest: false
+
 codewiki:
   # cpp-scanを実行しているPython 3.14を使う。
   expected_version: 2.0.0
@@ -24,11 +26,15 @@ codewiki:
   max_tokens: 8192
   request_limit: 30
   max_depth: 2
+
+# generateで使用する環境変数名を指定する。
 documentation:
   language: ja
   provider: codewiki
   model_env: CPP_SCAN_LLM_MODEL
   api_key_env: CPP_SCAN_LLM_API_KEY
   base_url_env: CPP_SCAN_LLM_BASE_URL
+
+# DBへ取り込む場合に使用する。生成だけを行う運用では省略できる。
 ingestion:
   file_scan_config: config.cpp-docs.local.yaml
