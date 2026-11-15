@@ -597,6 +597,7 @@ def test_real_codewiki_syntax_failure_is_not_full_success(source_project):
     ("cpp-source-test", "/v1/chat/completions", 200),
     ("gpt-6.1-terra", "/v1/responses", 200),
     ("gpt-6.1-terra", "/v1/responses", 401),
+    ("gpt-6.1-terra", "/v1/responses", 407),
 ])
 def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeypatch, model, endpoint, http_status):
     # CodeWiki・OpenAI SDK・ツール編集・JSON応答まで実行する。推論先だけローカル固定応答。
@@ -643,6 +644,10 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
                 "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}}
 
     class Handler(BaseHTTPRequestHandler):
+        def do_CONNECT(self):
+            requests.append((self.path, {}))
+            self.send_error(407)
+
         def do_POST(self):
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             requests.append((self.path, payload))
@@ -669,9 +674,22 @@ def test_real_codewiki_generation_with_local_api_fixture(source_project, monkeyp
     settings = replace(source_project, codewiki=replace(source_project.codewiki, timeout_seconds=30))
     monkeypatch.setenv(settings.documentation.model_env, model)
     monkeypatch.setenv(settings.documentation.api_key_env, "local-fixture-key")
-    monkeypatch.setenv(settings.documentation.base_url_env, f"http://127.0.0.1:{server.server_port}/v1")
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.delenv("no_proxy", raising=False)
+    base_url = f"http://127.0.0.1:{server.server_port}/v1"
+    if http_status == 407:
+        # The local proxy rejects CONNECT without forwarding it to a real API.
+        monkeypatch.setenv("no_proxy", "unrelated.invalid")
+        monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{server.server_port}")
+        base_url = "https://127.0.0.1:1/v1"
+    monkeypatch.setenv(settings.documentation.base_url_env, base_url)
     try:
         analysis = analyze(settings)
+        if http_status == 407:
+            with pytest.raises(ScanError, match="^codewiki_llm_proxy_failed$"):
+                generate(settings, analysis["analysis_id"])
+            assert requests and {path for path, _ in requests} == {"127.0.0.1:1"}
+            return
         if http_status == 401:
             with pytest.raises(ScanError, match="^codewiki_llm_http_401$"):
                 generate(settings, analysis["analysis_id"])

@@ -92,7 +92,9 @@ export CPP_SCAN_LLM_BASE_URL=https://api.openai.com/v1
 
 辞書の取得には `REQUESTS_CA_BUNDLE`、Python OpenAI SDKのHTTPS接続には `SSL_CERT_FILE` または `SSL_CERT_DIR` を使う。後者の両方が未設定の場合、`cpp-scan generate` は `REQUESTS_CA_BUNDLE` のCAをOpenAI SDKにも渡す。`codewiki_llm_tls_failed` が出た場合は、接続先の証明書を検証できるCAがバンドルに含まれているか確認する。[HTTPXの環境変数](https://www.python-httpx.org/environment_variables/#ssl_cert_file)
 
-LLM接続時の失敗は `codewiki_llm_connection_failed`、`codewiki_llm_timeout`、`codewiki_llm_http_401` などで表示する。HTTP 401は認証、403は権限、404はモデルまたは接続先、429はレート制限や利用枠を確認する。`codewiki_llm_quota_exhausted` が出た場合はAPIプロジェクトの請求設定と利用枠を確認する。
+社内プロキシ経由でHTTPSに接続する場合は、社内IT指定のプロキシURLを `HTTPS_PROXY` に設定し、実行シェルにエクスポートする。`cpp-scan` は標準の `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` と、それぞれの小文字表記をCodeWikiの子プロセスに渡す。API接続先が `NO_PROXY` に該当すると、その接続にはプロキシを使わない。[HTTPXのプロキシ設定](https://www.python-httpx.org/environment_variables/#proxies)
+
+`codewiki_llm_proxy_failed` が出た場合は、プロキシのURL、認証情報、API接続先への通信許可を確認する。`codewiki_llm_dns_failed` が出た場合は、API接続先またはプロキシのホスト名とDNS設定を確認する。`codewiki_llm_connection_failed` が出た場合は、同じシェルからAPI接続先への通信経路を確認する。HTTP 401は認証、403は権限、404はモデルまたは接続先、429はレート制限や利用枠を確認する。`codewiki_llm_quota_exhausted` が出た場合はAPIプロジェクトの請求設定と利用枠を確認する。
 
 ## 実行順
 

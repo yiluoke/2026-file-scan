@@ -32,6 +32,9 @@ class CodeWiki:
         names = {"PATH", "SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP", "TMPDIR",
                  "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE",
                  "TIKTOKEN_CACHE_DIR"}
+        # 辞書取得とLLM接続に、実行シェルで指定されたプロキシ経路を使う。
+        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"):
+            names.update((name, name.lower()))
         env = {k: v for k, v in os.environ.items() if k in names}
         # 子プロセスはソースの作業コピーで起動するため、呼出元を基準にする。
         for name in ("TIKTOKEN_CACHE_DIR", "REQUESTS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR"):
@@ -93,6 +96,7 @@ class CodeWiki:
                     "codewiki_not_installed", "codewiki_tokenizer_download_failed",
                     "codewiki_tokenizer_cache_invalid",
                     "codewiki_llm_tls_failed", "codewiki_llm_connection_failed",
+                    "codewiki_llm_proxy_failed", "codewiki_llm_dns_failed",
                     "codewiki_llm_timeout", "codewiki_llm_quota_exhausted",
                 }:
                     raise ScanError(code)

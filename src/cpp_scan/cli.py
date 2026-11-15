@@ -23,6 +23,8 @@ ERROR_HINTS = {
     "codewiki_llm_tls_failed": "LLMへのHTTPS接続でTLSエラーが発生しました。"
                                "社内CAバンドルとSSL_CERT_FILEを確認してください。",
     "codewiki_llm_connection_failed": "LLMに接続できません。ベースURLとネットワーク経路を確認してください。",
+    "codewiki_llm_proxy_failed": "プロキシ経由でLLMに接続できません。プロキシのURL・認証・接続先の許可を確認してください。",
+    "codewiki_llm_dns_failed": "LLM接続先またはプロキシの名前解決に失敗しました。ホスト名とDNS設定を確認してください。",
     "codewiki_llm_timeout": "LLMへのリクエストがタイムアウトしました。",
     "codewiki_llm_http_400": "APIがリクエストを受け付けませんでした。モデルとAPI方式を確認してください。",
     "codewiki_llm_http_401": "API認証に失敗しました。仕様書生成用のAPIキーを確認してください。",

@@ -9,10 +9,12 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import os
+import socket
 import ssl
 import subprocess
 import sys
 from dataclasses import replace
+from functools import partial
 from pathlib import Path
 
 
@@ -50,7 +52,7 @@ def prepare_tokenizer():
 def generation_error_code(error):
     from codewiki.cli.utils.errors import IncompleteGenerationError
     from codewiki.src.be.agent_tools.doc_guard import DocumentationWriteError
-    from httpx import TimeoutException, TransportError
+    from httpx import ProxyError, TimeoutException, TransportError
     from openai import APIConnectionError, APIStatusError, APITimeoutError
     from pydantic_ai.exceptions import ModelHTTPError
 
@@ -77,7 +79,11 @@ def generation_error_code(error):
                 return f"codewiki_llm_http_{status}"
         if isinstance(exc, ssl.SSLError):
             return "codewiki_llm_tls_failed"
-        if isinstance(exc, (APITimeoutError, TimeoutException)):
+        if isinstance(exc, socket.gaierror):
+            return "codewiki_llm_dns_failed"
+        if isinstance(exc, ProxyError):
+            codes.append("codewiki_llm_proxy_failed")
+        elif isinstance(exc, (APITimeoutError, TimeoutException)):
             codes.append("codewiki_llm_timeout")
         elif isinstance(exc, (APIConnectionError, TransportError)):
             codes.append("codewiki_llm_connection_failed")
@@ -86,12 +92,21 @@ def generation_error_code(error):
     return codes[-1] if codes else None
 
 
+def configure_agent_http_client():
+    from codewiki.src.be import llm_services
+    from httpx import AsyncClient
+    from openai import DEFAULT_TIMEOUT
+
+    # 固定版のpydantic-aiはtransportを指定しており、HTTPXの環境変数によるプロキシ選択が無効になる。
+    client = AsyncClient(timeout=DEFAULT_TIMEOUT)
+    llm_services.OpenAIProvider = partial(llm_services.OpenAIProvider, http_client=client)
+
+
 def use_responses_api():
     from codewiki.src.be import llm_services
     from codewiki.src.be.api_usage import record_response
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.profiles.openai import openai_model_profile
-    from pydantic_ai.providers.openai import OpenAIProvider
 
     def responses_model(config, model_name):
         # The pinned pydantic-ai predates GPT-6 model profiles.
@@ -99,7 +114,7 @@ def use_responses_api():
                           openai_supports_encrypted_reasoning_content=True)
         return OpenAIResponsesModel(
             model_name,
-            provider=OpenAIProvider(base_url=config.llm_base_url, api_key=config.llm_api_key),
+            provider=llm_services.OpenAIProvider(base_url=config.llm_base_url, api_key=config.llm_api_key),
             profile=profile,
             settings={"max_tokens": config.max_tokens, "extra_body": {"store": False}},
         )
@@ -181,6 +196,7 @@ def main(request):
                         for name in ("model_env", "api_key_env", "base_url_env")]
     if not all((model, key, base)):
         raise RuntimeError("llm_environment_missing")
+    configure_agent_http_client()
     if model == "gpt-6.1-terra":
         use_responses_api()
     from codewiki.cli.adapters.doc_generator import CLIDocumentationGenerator
