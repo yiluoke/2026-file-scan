@@ -26,9 +26,9 @@
 			<polygon points="519.5933 72, 513.5933 75, 513.5933 69" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
 			<rect x="522.5933333333332" y="14" width="235.29666666666662" height="116" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
 			<rect x="522.5933333333332" y="126" width="235.29666666666662" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
-			<text x="535.5933333333332" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,210) scale(1,-1)">保管原本を確認</text>
-			<text x="535.5933333333332" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">/sources/{公開ID}</text>
-			<text x="535.5933333333332" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">接続キー・原本SHAを検査</text>
+			<text x="535.5933333333332" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,210) scale(1,-1)">原本・関連画像を確認</text>
+			<text x="535.5933333333332" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">source_ref / image_ref</text>
+			<text x="535.5933333333332" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">Bearer・採用先・SHAを確認</text>
 		</g>
 	</g>
 </svg>

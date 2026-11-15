@@ -3,7 +3,7 @@
 日本語スキャンPDFのOCR本文はRapidOCR＋ONNX Runtime CPUで抽出したsourceとして、既存の全文・ベクトル検索経路へ渡す。文字認識誤りはEmbeddingで補正されない。原本ページ・bboxを根拠として保持する。設定で生成したPDF・Office画像の説明はderivedとし、原図との照合後に明示公開する。[日本語OCR](../implementation/rapidocr-pdf.md)・[画像認識](../implementation/image-analysis.md)
 
 - 作成日: 2026-10-12
-- 最終更新日: 2026-11-01
+- 最終更新日: 2026-11-15
 - 状態: ローカル試作の検索API・公開管理は実装済み。文書ACL・Dify本体は後続
 - 対象: 部署内の維持管理システムに関するWord・Excel・PDF・TXT・Markdown文書の検索
 - 開発環境: PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0を導入済み。本番環境は別途検証
@@ -33,13 +33,13 @@ PGroonga 4.1.0を既存の開発DB・テストDBへ導入し、日本語索引�
 
 Difyとの同時実装は不要。先に検索APIをHTTP契約テスト・単独クライアントで検証し、次にDify HTTP Requestノードを接続する。初回から6章のrequest／responseと成功・不足・エラーの区別を固定する。Chatflow・回答LLM・引用画面は後続で実装できる。
 
-### 初版実装で確定した差分
+### ローカル試作で実装した範囲
 
 - 取り込みv3の制約・metadata・CLIを保ち、`search_schema_migrations`で検索専用v1を管理する。`search_releases / search_release_bindings / search_catalogs`が業務版・対象原本・採用先を持つ。
 - `file-search publish`が、確認済み原文・原文対応・ブロック・関係・入力が一致する完成ベクトルを`search_publications / search_chunks / search_blocks`へ不変のコピーとして登録する。これが初版の`published`であり、元の取り込み世代・ブロック・チャンクはdraftのままとする。
 - 公開後の再抽出でコピーは書き換えず、現行検索では原本状態・選択世代・変換版・元世代の更新時刻を照合する。変更を検出した旧コピーは更新待ちへ外し、明示再公開で切り替える。公開後に生成したEmbeddingも再公開で反映する。
 - 読み取りは非同期SQLAlchemy＋psycopg、質問Embeddingは専用AsyncOpenAIクライアント。期限・切断時はSQLと外部要求をキャンセルする。API起動はloopbackへ限定し、文書ACLの代わりに適用範囲を広げる処理を作らない。
-- 原本取得は`/sources/{publication_id}`で公開対象とCASのハッシュを再検査する。根拠・画像を含む原文の自動外部送信や、長期公開URLは追加しない。
+- 原本と画像は`/sources/{publication_id}`と`/sources/{publication_id}/images/{occurrence_id}`から取得する。採用状態と保管実体のSHA-256・サイズを検査する。履歴検索は返却URLに`?mode=history`を付ける。公開の取り消しは`file-search unpublish`で対象版の採用だけを解除し、公開コピーと操作記録を保持する。
 - 検索設定の開始値は実装済み。全文の語選択はGroongaのbigram（2文字以上、最大16語）とし、意味検索・識別子検索と統合する。実データでの精度を評価して設定版を更新する。
 
 この実装差分を初版の正本とし、以下の元世代そのものを公開する方式や権限制御は将来の設計として読む。検索用テーブルの物理定義は[検索スキーマ](../../src/search/schema.py)、運用と未検証範囲は[実装説明](../implementation/search-api.md)を参照。
@@ -133,7 +133,7 @@ PostgreSQL、pgvector、PGroongaの対応版と同居動作、導入権限、バ
 
 質問は元の文字列を保持しつつ、必要に応じて自然言語部分と識別子候補を取り出す。識別子の完全一致を優先できるようにし、部分一致や別名展開を追加する場合は誤一致を評価する。全文検索と識別子一致検索の評価値を、ベクトル距離とそのまま足し合わせない。
 
-各経路で候補数に上限を設け、同じ`(generation_id, chunk_id)`の重複をまとめる。利用者が指定する`top_k`と、内部の候補取得数は別に管理する。`top_k`にはサービス側の上限を設定する。
+各経路で候補数に上限を設け、同じ`(publication_id, chunk_id)`の重複をまとめる。利用者が指定する`top_k`と、内部の候補取得数は別に管理する。`top_k`にはサービス側の上限を設定する。
 
 ### 4.3 順位統合と文脈取得
 
@@ -161,16 +161,16 @@ PostgreSQL、pgvector、PGroongaの対応版と同居動作、導入権限、バ
 
 ### 4.5 初期検索設定とスコア
 
-以下をサーバー管理の`search_config_version=poc-v1`として固定し、APIから内部設定を変更させない。
+以下をサーバー管理の`search_config_version=poc-v2`とする。意味検索の下限はYAMLの`search.semantic_min_cosine_similarity`で設定し、評価結果には採用値も記録する。
 
 | 設定 | PoCの開始値・方針 |
 | --- | --- |
 | 候補数 | 意味・全文・識別子の各経路で最大50、統合前の和集合は最大150 |
-| 意味検索 | 選択プロファイルのcosine距離。まず認可・採用版で絞った集合の正確な近傍検索を基準とする |
+| 意味検索 | 選択プロファイルのcosine距離による正確検索。候補はcosine類似度が正で、`search.semantic_min_cosine_similarity`（`0.0`〜`1.0`、既定`0.0`）以上のものに限る |
 | 全文検索 | PGroonga。通常質問を検索式としてそのまま`&@~`へ渡さず、抽出語を`&@`のバインド値で評価する。語数最大16、各128文字、初期はORで候補取得 |
 | 識別子検索 | `chunks.identifiers`に対する大文字小文字・記号を保持した要素一致。候補最大16個、各256文字。完全一致数の降順、次に安定IDで順位付け |
 | 順位統合 | `RRF(d) = Σ w_i / (60 + rank_i(d))`。順位は1始まり、3経路とも重み1、不在経路の寄与0 |
-| 同点 | 各経路・統合結果とも`(generation_id, chunk_id)`の辞書順で確定。実スコアが同点でも一意な`row_number`を付ける |
+| 同点 | 各経路は`(generation_id, chunk_id, publication_id)`の辞書順で確定。RRF統合の同点は`(publication_id, chunk_id)`で順序を決める |
 | 同一原本の上限 | 独立ヒットは最大3件。落とした場合は後続候補で補充し、返却件数を水増ししない |
 | 文脈 | 選択ヒットごと最大2ブロック、確認済み関係を1段まで。全体で追加レコード最大5件 |
 | 根拠予算 | `content`の実測合計6000トークン、1レコード最大2000トークン。`cl100k_base`で計数、JSON応答全体最大256 KiB |
@@ -190,18 +190,18 @@ HNSWは必要性を測定してから追加する。ACL・版のWHERE条件を�
 
 ### 4.6 読み取りの整合性と実装の分割
 
-1. 入力検証、接続元の認証、接続元とナレッジの事前許可確認を行う。プロファイルと検索設定の識別子を短いDB読み取りで取得する。
-2. 許可されたプロバイダーへ質問だけを送りEmbeddingを取得する。未認可の質問を外部へ送らず、この外部要求中はDBトランザクション・接続を保持しない。
-3. `REPEATABLE READ READ ONLY`を開始し、接続許可、既定版、Embeddingプロファイル、現在のACL、台帳版を改めて解決する。プロファイルが変わっていれば503として再試行可能にし、異なる空間のベクトルを比較しない。質問ベクトルの次元・有限値・非ゼロも検査する。
-4. `expected_documents`を、認可済みナレッジの予定原本と解決版から作る。未収集・採用行なし・未索引もLEFT JOIN等で残してcoverageを計算する。ACLが不明・失敗の原本は根拠にせず、検証不能時の要求は拒否する。
+1. 入力検証、接続認証、ナレッジと対象版の解決を行う。プロファイル、必須索引、公開チャンクの有無を短いDB読み取りで確認する。公開候補の有無は原本状態・採用版・追加フィルターを適用して判定する。
+2. 対象チャンクがある場合に質問をEmbeddingする。対象がゼロの場合も予定原本全体のcoverageを計算する。外部要求中はDBトランザクションと接続を解放する。
+3. `REPEATABLE READ READ ONLY`を開始し、設定ナレッジの対象版・採用の版番号・Embeddingプロファイルと必須索引を再確認する。採用の版番号またはプロファイルが変わっていれば503として再試行可能にする。質問ベクトルの次元・有限値・非ゼロも検査する。
+4. `expected_documents`を、設定ナレッジの予定原本と解決版から作る。未収集や採用行のない原本もLEFT JOINで残す。ベクトル未準備と併せてcoverageを計算する。追加フィルターはこの集計の後で検索候補に適用する。
 5. `eligible_chunks`を、採用された公開済み世代・チャンク・全元ブロックから作る。`ready`と承認済み`partial`のみ許可する。意味経路ではさらに選択プロファイル・次元・実入力ハッシュが一致する完成ベクトルに絞る。追加フィルターは候補側へ適用する。
-6. 同じ接続・スナップショットで3経路を順に実行し、`(generation_id, chunk_id)`で統合する。文脈取得と全派生元の検査も同じトランザクションで行う。別接続での並列SQLは初期版で行わない。
-7. DB読み取りを終了し、本文対応・出典・予算を検査して応答を組み立てる。返却直前に接続キーの失効と、台帳・接続許可・対象原本ACLの版および許可期限を短い最新読み取りで再検査する。変更なら結果を破棄し503 `SEARCH_UNAVAILABLE`（再試行可）とする。再検査後の競合まで完全に防ぐ保証はせず、失効反映時間の運用条件を定める。
+6. 同じ接続・スナップショットで3経路を順に実行し、`(publication_id, chunk_id)`で統合する。文脈取得も同じトランザクションで行う。
+7. スナップショット内で本文対応・出典・予算を検査して応答を組み立て、読み取りを終了する。返却前に、短い最新読み取りで採用・台帳の版番号、解決した版、列挙状態、採用候補と不足件数を再検査する。変更を検出した場合は結果を破棄し503 `SEARCH_UNAVAILABLE`（再試行可）を返す。
 8. 本文を含めない監視イベントを別の書き込みトランザクションで保存する。読み取り専用トランザクションへ監視INSERTを混ぜない。
 
-`snapshot_id`は1回の整合した読み取りを識別するIDであり、再検索・ページング・後日再現のトークンにはしない。原本閲覧時には別途現在の認可を実施する。
+権限対応版ではこの境界に接続許可、接続キーの失効、利用者別の原本ACLと許可期限の再検査を加える。検証不能な原本を根拠から外し、検証不能な要求は拒否する。失効反映時間は権限対応版の運用条件として定める。`snapshot_id`は1回の整合した読み取りを識別する。原本・画像の取得では別途、取得時点での版・原本状態・採用を照合する。
 
-実装時の配置は`api`（HTTP・検証・エラー変換）、`retrieval/service`（一連の検索）、`scope`（認可と版）、`repositories`（SQLとcoverage）、`rank`（RRF・スコア）、`evidence`（原文対応・文脈・予算）、`query_embedding`（外部I/O）に分ける。APIモジュールを取り込みCLIから独立して起動できる構成とし、取り込み中でも公開世代の検索を行えるようにする。
+実装は`api.py`（HTTP・検証・エラー変換）、`service.py`（検索の進行、検索範囲の解決、質問Embedding）、`repository.py`（SQLとcoverage）、`ranking.py`（RRF・スコア）、`evidence.py`（原文対応・文脈・予算）に分ける。APIは取込CLIと独立して起動し、取込中も公開コピーを検索できる。
 
 ## 5. データモデルと別資料
 
@@ -226,6 +226,9 @@ Embeddingモデルを変更する際は別のプロファイルで再生成し�
 | --- | --- | --- |
 | `POST /search-with-status` | Dify HTTP Requestノードからの主経路 | `records`と検索範囲・不足・返却制限の状態 |
 | `POST /retrieval` | Dify External Knowledge API互換 | `records`のみ。coverageが`complete`の場合に限る |
+| `GET /sources/{publication_id}` | 原本取得 | 採用状況と保管実体を検証した原本 |
+| `GET /sources/{publication_id}/images/{occurrence_id}` | 画像取得 | 採用状況と保管実体を検証した画像 |
+| `GET /healthz` | 通常モードのDB・検索スキーマ・拡張・必須索引の診断 | 状態、実行モード、拡張版 |
 
 両方ともJSONと`Authorization: Bearer <接続用APIキー>`を使う。Difyへ登録する標準連携の接続先はサービスのベースURLとし、Difyが`/retrieval`を付加する。[Dify公式契約](https://docs.dify.ai/en/cloud/use-dify/knowledge/external-knowledge-api)
 
@@ -271,7 +274,7 @@ Difyが定義する全演算子の実装は初期対象にしない。次の許�
 
 | `name` | 許可演算子・型 | サーバー内の意味 |
 | --- | --- | --- |
-| `target_release` | `is`、単一文字列 | `current`または具体的な`release_id`。版を選ぶ制御条件として先に解決 |
+| `target_release` | `is`、単一文字列 | `current`、具体的な`release_id`または版名。版を選ぶ制御条件として先に解決 |
 | `document_id` | `is` / `in`、文字列 / 文字列配列 | 原本IDの絞り込み |
 | `feature_id` | `is` / `in`、文字列 / 文字列配列 | `chunks.feature_ids`の要素と一致 |
 | `artifact_type` | `is` / `in`、`source` / `derived`の値 | 由来の絞り込み。派生物にも全派生元の認可を適用 |
@@ -280,7 +283,7 @@ Difyが定義する全演算子の実装は初期対象にしない。次の許�
 
 `logical_operator`は省略時`and`、初期版は`and`だけを受ける。`or`・ネストは422。条件数は最大8、同じ名前の重複を拒否する。文字列値は非空・最大256文字、配列は1〜20要素の重複しない文字列とする。SQLのカラム・演算子はサーバーの固定対応表から選び、値はバインドする。任意JSONパスをSQLへ展開しない。
 
-`target_release`が省略または`current`なら`knowledge_bases.default_release_id`を1回解決し、`search_mode=current`とする。既定版未設定は409 `RELEASE_UNRESOLVED`。具体的IDは`search_mode=history`とし、同一システム・環境に属する版か、接続元が履歴参照を許可されているか確認する。初期PoCは履歴許可なしを既定とし、許可対象は接続元・ナレッジ別のサーバー管理設定で明示する。DBへ移す場合は04へ定義を追加する。不存在と参照不可の版は同じ404とする。
+`target_release`が省略または`current`なら、設定ナレッジの`search_catalogs.default_release_id`を解決し、`search_mode=current`とする。既定版未設定は409 `RELEASE_UNRESOLVED`。版IDまたは版名を明示した検索は、採用版と同じ版でも`search_mode=history`となる。履歴は起動時の`--allow-history`によってプロセス単位で有効にし、設定ナレッジに属する版を解決する。不明な版・未許可の履歴は404。接続元ごとに履歴を許可する設計は権限対応版で扱う。
 
 日付からの版推測、複数リリースの混在検索、`current`を質問やLLMの判断で置換する処理は行わない。履歴でも現在のACLを検査する。`target_release`以外の条件は認可後の候補集合との積集合であり、公開状態、原本状態、主体、ACL、Embeddingプロファイルを上書きできない。
 
@@ -301,6 +304,7 @@ coverageは対象ナレッジ・解決した版・現在の認可範囲全体に
         "evidence_id": "evidence-example-001",
         "evidence_role": "hit",
         "document_id": "doc-example-001",
+        "publication_id": "publication-example-001",
         "source_version": "sha256:<原本ハッシュ>",
         "conversion_revision": "sha256:<変換設定等のハッシュ>",
         "generation_id": "generation-example-001",
@@ -315,7 +319,8 @@ coverageは対象ナレッジ・解決した版・現在の認可範囲全体に
           {"format": "pdf", "path": "design/daily-close.pdf", "page_number": 12, "heading": "4.2 エラー条件"}
         ],
         "related_evidence_ids": [],
-        "related_assets": []
+        "related_assets": [],
+        "source_ref": "/sources/publication-example-001"
       }
     }
   ],
@@ -324,10 +329,12 @@ coverageは対象ナレッジ・解決した版・現在の認可範囲全体に
     "search_mode": "current",
     "resolved_release_id": "release-example",
     "catalog_revision": 12,
+    "publication_revision": 8,
     "policy_revision": null,
     "access_control": "not_enforced",
+    "execution_mode": "local_prototype",
     "embedding_profile_id": "profile-example-001",
-    "search_config_version": "poc-v1",
+    "search_config_version": "poc-v2",
     "coverage_scope": "configured_knowledge_release",
     "coverage_state": "incomplete",
     "pending_updates": 1,
@@ -353,7 +360,7 @@ coverageは対象ナレッジ・解決した版・現在の認可範囲全体に
 - `source_locations`は実際に返す文字範囲と一致させる。引用を部分返却した場合は`chunk_blocks`に沿った文字範囲もmetadataへ保持し、行範囲等を原文から算出できる場合は狭める。PDFのbboxやExcelのセル範囲しか対応がない場合は元要素の範囲を保持し、`location_granularity: "block"`とする。文字範囲が追えることだけを理由に、文字ごとのbboxやセル対応が得られたと扱わない。
 - `result_state`は`matched / no_match / budget_exhausted`。採用可能なヒットがゼロなら`no_match`、ヒットがあるが1件も予算内に収まらない場合は`budget_exhausted`。いずれも`records: []`となり得る。`no_match`は資料の不存在を意味しない。
 - `limit_reasons`は`top_k / document_cap / token_budget / context_limit / response_size`の配列。最終選択で実際に根拠を落とした理由だけを返す。内部候補の打ち切り数や経路別生スコアは利用者向けに返さない。
-- 予定原本ごとの不足件数は04の状態から計算する。`pending_updates`はリリース対応の更新待ち、`failed_documents`は収集・変換等の失敗、`partial_documents`は承認済み部分抽出、`uncollected_documents`は未収集、`index_pending_documents`は必要索引未準備、`unknown_documents`は版対応欠落等の未確定を表す。同一原本は複数理由へ該当し得るため足し算で原本総数にしない。
+- 予定原本ごとの不足件数を状態から計算する。`pending_updates`はリリース対応・採用の待ち、`failed_documents`は収集・変換等の失敗、`partial_documents`は承認済み部分抽出、`uncollected_documents`は未収集、`index_pending_documents`は公開チャンクに必要なベクトルが欠けている原本数、`unknown_documents`は版対応欠落等の未確定を表す。ベクトル欠落と部分抽出などは同じ原本に重なることがある。DBの必須索引の欠落や無効化は503として扱う。
 - coverageは`complete / incomplete / unknown`。予定対象を確定できない場合は`unknown`を優先し、確定できた範囲に不足があれば`incomplete`、不足なしなら`complete`。範囲全体が不明な件数は0にせず`null`とする。`complete`は列挙・処理の完了であり、回答精度や知識の網羅を保証しない。
 - 件数・メッセージは認可範囲だけから作る。原本ACLを検証できない場合は6.7のエラーとし、閲覧不可の名称・存在・失敗件数をcoverageへ含めない。
 
@@ -365,13 +372,13 @@ coverageは対象ナレッジ・解決した版・現在の認可範囲全体に
 
 `score`は4.5の順位由来の互換値であり、確率・正答率・原本の信頼度ではない。`score_threshold`は変換後の値へ`>=`で適用し、その後に件数・文脈予算を適用する。Difyによる追加の閾値処理・再ランキングで根拠が変わる可能性も結合評価する。
 
-ChatflowはHTTP Requestノードの成功・失敗を先に判定する。200では次の順に扱う。
+ChatflowはHTTP Requestノードの成功・失敗を先に判定する。テストモードのHTTP 200は`retrieval_status.execution_mode=test`または`metadata.test_mode=true`で判定し、接続試験の表示で終了する。通常モードの200では次の順に扱う。
 
 1. `result_state=budget_exhausted`は結果の組み立て制限として扱い、根拠なしで回答しない。
 2. `coverage_state=incomplete / unknown`なら不足を明示し、存在しない・影響がないとは断定しない。
 3. `records=[]`なら確認できる根拠なしと伝える。根拠ありなら本文と出典を回答用LLMへ渡す。
 
-非200では通常の回答生成へ進めず、エラー種別に応じて再試行または一時利用不可を表示する。原本リンクは検索範囲・版・世代・位置を検証する認可付き閲覧経路で生成し、閲覧時にも現在の権限を再確認する。ストレージの実パス、APIキー、恒久的な公開URLを返さない。画像は出現位置と原本の認可を介して取得する。PoCでは画像バイト列を検索応答へ含めない。
+非200では回答生成を止め、エラー種別に応じて扱う。現行の原本・画像の取得は既定版で採用中かつ現在の原本状態と一致することを検証する。履歴は`--allow-history`と返却URLの`?mode=history`を使い、その版で現在採用されている公開コピーに限る。原本の`source_ref`、`original_image`・`region_image`の`related_assets[].image_ref`は相対URLで、どちらも検索と同じBearer認証を使う。画像バイト列は検索応答とは別に取得する。利用者別の閲覧権限チェックは権限対応版で行う。
 
 ### 6.6 接続認証と利用者別ACL
 
@@ -424,7 +431,7 @@ PoCの開始値は全体10秒、質問Embedding最大4秒、DB各SQLの`statemen
 1. 原本の変更・削除・権限変更を検出し、管理台帳の状態を更新する。
 2. 変更された原本の新しい`source_version`と`conversion_revision`に対応する抽出世代を準備する。
 3. 変換成果物の整合性、原本位置、公開状態、権限、Embedding、全文・識別子索引の準備状態を検証する。
-4. 必要なレビューと公開判定が済んだ世代について、active指定をトランザクションで原子的に切り替える。
+4. 必要なレビューと公開判定が済んだ世代について、対象版の採用をトランザクションで切り替える。取り消す場合は`file-search unpublish`で対象版だけの採用を外し、原本と公開コピーを保持する。
 5. 切り替えに伴うキャッシュ無効化と監視記録を行う。古い世代は履歴方針に従って保持・削除する。
 
 同じ原本内容・変換設定・Embeddingプロファイルの再実行は、重複登録を避けられる処理とする。公開前の部分的な登録結果が検索に混入しないようにし、チャンクごとに新旧が混在する切り替えを避ける。
@@ -518,7 +525,7 @@ Embeddingの`model_name`への列名変更やプロファイル全体のID再生
 
 | ID | 未決事項・必要時点 | 実装への影響 | 開始案 |
 | --- | --- | --- | --- |
-| U1（導入・初期実装は解決） | PGroonga 4.1.0・Groonga 16.1.4を導入済み。初期索引は`TokenBigram`＋`NormalizerAuto`。自然言語質問の分割と最大16語のリテラルOR検索を実装 | 日本語検索・正規化・索引利用・pgvector同居、公開チャンクの全文検索を実DBで確認済み。実業務の日本語検索精度は別途評価が必要 | 索引・検索設定は`poc-v1`に固定。質問の語選択は評価セットで比較。本番やComposeへ展開する際は別途拡張を構成 |
+| U1（導入・初期実装は解決） | PGroonga 4.1.0・Groonga 16.1.4を開発環境へ導入済み。初期索引は`TokenBigram`＋`NormalizerAuto`。自然言語質問の分割と最大16語のリテラルOR検索を実装 | 日本語検索・正規化・索引利用・pgvector同居、公開チャンクの全文検索を実DBで確認済み。必須索引の欠落・無効状態はhealthと検索で503 | `poc-v2`の語選択と意味検索の下限を評価セットで比較。本番では拡張と索引を構成し、実資料の日本語検索品質を測定 |
 | U2（管理機構は実装済み） | PoCの対象業務リリース・各原本の要求版、公開承認者と部分抽出を許可する基準。初回の実資料公開前 | `search_releases`・`search_release_bindings`・公開コピー、coverageと承認記録を実装済み。原本ハッシュ・下書き選択から業務版や承認を自動推定できないため、実資料の初期データは未登録 | `file-search create-release`と`publish`で管理者が採用する原本・世代・承認者を明示する。原則は完全抽出を公開し、`partial`は不足を確認して`--allow-partial`で個別承認。実際のリリース名・承認基準を決めてから公開する |
 | U3（初回は保留） | 共有範囲、キー管理・失効手段、原本状態・権限変更の反映期限。権限対応版の実装前 | `caller_id → knowledge_id → service_scope`の許可管理、`document_acl`、失効の再確認、収集・同期の起動頻度へ影響。ファイルをOSで読めることは質問者の閲覧権限を証明しない | 利用者指定により、初回は`local_prototype`で文書ACLを適用しない。設定ナレッジ・採用版の制限を維持し、文書ACL・利用者別SSOは後段。権限対応版へ移行する際に許可集合・失効反映条件を確定 |
 | U4（登録・検索機構は実装済み） | `feature_id`の付与元・管理者と、業務固有コードの識別子抽出規則。実資料のラベル付与・精度評価前 | 公開時の`--feature-id`と、公開コピーへの識別子補完（文書本文のASCII識別子・バッククォート・パス）を追加。取り込み本文や既存メタデータを上書きせず索引・回帰試験を実装済み | 機能ラベルは管理者が公開時に明示付与。付与元が未整備のナレッジへの機能フィルターは422。業務固有の識別子は実サンプルで評価し、必要に応じて公開時の抽出規則を拡張する |
@@ -546,7 +553,7 @@ FastAPI・Starlette・Uvicorn・HTTPX・greenletはsearch extraへ固定済み�
 - 本番SSOと利用者別ACLの伝播・所属同期、監査永続化の必須化、可用性目標。共有PoCには必須にしないが、利用者別に資料を制限する本番へ広げる前に再設計・検証する。
 - U6の運用値に従うバックアップ復旧・保存期限・物理削除。原本・世代・画像・Embeddingキャッシュの参照を横断して検査し、共有実体を別文書の参照があるまま消さない。既存のJSON／Markdownレポートにも本文があるため、API監視ログとは別に保護・保存期間を決める。
 
-設計照合時の既存11テストに加え、検索実装後はPython 3.14.4と専用PostgreSQLで既存取込・Embedding・実PDF変換を含む全179テストが成功した。PGroonga・公開・HTTP契約は実DBで検証済み。実OpenAI API、日本語検索品質、利用者別ACL、Dify本体でのChatflow実行は未検証。[操作手順と検証記録](../implementation/search-api.md)を参照。
+2026-11-15の見直し後、macOSの専用PostgreSQL 18で全309テストが成功した。本番手順のAPI専用DB権限でも、模擬Embeddingを使ったhealth・検索・原本取得を確認した。実OpenAI API、日本語検索品質、Ubuntu VMの配備・復元、Dify本体でのChatflow実行は対象環境で検証する。利用者別ACLは後続で扱う。[操作手順と検証記録](../implementation/search-api.md)
 
 ## 11. 公式参考資料
 

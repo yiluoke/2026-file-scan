@@ -165,11 +165,8 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
             value["handoff_binding"] = binding
             save_state(settings, value)
             write_json(journal, {"phase": "ingesting", "generation_id": generation_id})
-            try:
-                report = ingest_documents(config, engine, retry_partial=retry_partial,
-                                          verified_markdown=hashes, allow_removals=accept_scope_change)
-            except PipelineError as exc:
-                raise ScanError(str(exc)) from None
+            report = ingest_documents(config, engine, retry_partial=retry_partial,
+                                      verified_markdown=hashes, allow_removals=accept_scope_change)
             verify_files(current, expected)
             expected_paths = {i["path"] for i in expected}
             actual_paths = {i["relative_path"] for i in report["files"]}
@@ -204,6 +201,8 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
             save_state(settings, value)
             record.update(status=result["status"], summary=result["summary"])
             return result
+        except PipelineError as exc:
+            raise ScanError(str(exc)) from None
         finally:
             if owned_engine:
                 engine.dispose()

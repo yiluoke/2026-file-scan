@@ -620,7 +620,7 @@ PoCは検索結果キャッシュを必須にしない。将来導入する場�
 
 ## 12. ローカル試作で実装した検索専用スキーマv1
 
-取り込みv3への影響を抑えるため、公開対象のコピー・採用ポインター・検索監視を別のmetadataと版で追加した。取り込み用の制約やテーブルは変更しない。`file-search init-db`は既存の取り込みv3とvector／PGroongaの存在を確認し、検索専用表だけを作成する。再実行時は版・表の欠落を確認し、未知版や未管理の同名表を自動修復しない。
+取り込みv3への影響を抑えるため、公開対象のコピー・採用ポインター・検索監視を別のmetadataと版で追加した。`file-search init-db`は既存の取り込みv3とvector／PGroongaの存在を確認し、検索専用表と索引を作成する。再実行時は検索版・表・必須索引を検査し、問題のある索引名を報告する。索引や未知版の修復はDB管理者が行う。
 
 | テーブル | 主な列・キー・参照 |
 | --- | --- |
@@ -634,6 +634,8 @@ PoCは検索結果キャッシュを必須にしない。将来導入する場�
 | `search_events` | `request_id text PK`、`created_at`、任意の`knowledge_id / release_id / snapshot_id`、`result_status`、`duration_ms`、`summary jsonb`、`error_code`。本文・質問・キー・生SQLは保存しない |
 
 公開IDはリリース・原本・世代・実際のコピー内容と元世代更新時刻から生成する。公開行の本文を管理コマンドでUPDATEせず、新しいコピーを作って採用ポインターだけを切り替える。元の取り込み世代・ブロック・チャンクはdraftを維持する。`published`は初版では承認済み検索コピーの状態を指す。
+
+公開取り消しは対象版・原本の`search_release_bindings.publication_id`をNULLにし、`search_catalogs.revision`の更新、`search_events`への`publication_withdrawn`の操作記録と同じトランザクションで確定する。予定原本、要求版、公開コピー、原本実体は保持する。
 
 `search_chunks.search_text`にはPGroonga（TokenBigram＋NormalizerAuto）、識別子・機能配列にはGINを追加する。ベクトルはcosine正確検索を用い、HNSWは追加していない。
 

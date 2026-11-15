@@ -24,8 +24,9 @@ class SearchSettings:
     record_token_budget: int = 2000
     response_bytes: int = 262144
     candidate_limit: int = 50
-    config_version: str = "poc-v1"
+    config_version: str = "poc-v2"
     test_mode: bool = False
+    semantic_min_cosine_similarity: float = 0.0
 
 
 def load_search_settings(path):
@@ -43,12 +44,17 @@ def load_search_settings(path):
     test_mode = search.get("test_mode", False)
     if not isinstance(test_mode, bool):
         raise ConfigError("search.test_modeにはtrueまたはfalseが必要です")
+    minimum = search.get("semantic_min_cosine_similarity", 0.0)
+    if isinstance(minimum, bool) or not isinstance(minimum, (int, float)) or not 0 <= minimum <= 1:
+        raise ConfigError("search.semantic_min_cosine_similarityには0以上1以下の数値が必要です")
     # 接続試験には収集元・DB・モデル設定を要求しない。
     settings = None if test_mode else load_config(path)
     key = os.environ.get("FILE_SCAN_SEARCH_API_KEY", "")
     if not key or any(c in key for c in "\r\n\x00"):
         raise ConfigError("FILE_SCAN_SEARCH_API_KEYを設定してください")
-    return SearchSettings(settings, key, test_mode=test_mode)
+    return SearchSettings(
+        settings, key, test_mode=test_mode, semantic_min_cosine_similarity=float(minimum)
+    )
 
 
 def async_database(url, *, schema=APPLICATION_SCHEMA, **kwargs):

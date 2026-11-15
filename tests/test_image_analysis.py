@@ -11,7 +11,7 @@ import httpx
 import openai
 import pytest
 from docx import Document
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.drawing.image import Image as SpreadsheetImage
 from PIL import Image
@@ -40,6 +40,7 @@ def test_office_image_analysis_publication(postgres_database, tmp_path, monkeypa
     root.mkdir()
     picture = io.BytesIO()
     Image.new("RGB", (160, 80), "white").save(picture, "PNG")
+    picture_bytes = picture.getvalue()
     picture.seek(0)
     if file_format == "docx":
         document = Document()
@@ -132,21 +133,71 @@ def test_office_image_analysis_publication(postgres_database, tmp_path, monkeypa
 
     search = SearchSettings(settings, "test-search-key")
     engine = async_database(postgres_database.url, schema=namespace)
-    with TestClient(create_app(search, engine=engine, embedder=query_embedding)) as client:
-        response = client.post("/search-with-status", headers={"Authorization": "Bearer test-search-key"},
-                               json={
-                                   "knowledge_id": settings.knowledge_id, "query": "編集欄",
-                                   "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
-                                   "metadata_condition": {"conditions": [
-                                       {"name": "artifact_type", "comparison_operator": "is", "value": "derived"},
-                                   ]},
-                               })
+    headers = {"Authorization": "Bearer test-search-key"}
+    condition = {"name": "artifact_type", "comparison_operator": "is", "value": "derived"}
+    payload = {
+        "knowledge_id": settings.knowledge_id, "query": "編集欄",
+        "retrieval_setting": {"top_k": 5, "score_threshold": 0.0},
+        "metadata_condition": {"conditions": [condition]},
+    }
+    original_path = root / f"manual.{file_format}"
+    original_bytes = original_path.read_bytes()
+    with TestClient(create_app(search, engine=engine, embedder=query_embedding, allow_history=True)) as client:
+        response = client.post("/search-with-status", headers=headers, json=payload)
         assert response.status_code == 200, response.text
         hit, = response.json()["records"]
         assert "編集欄" in hit["content"]
-        assert hit["metadata"]["artifact_type"] == "derived"
-        assert hit["metadata"]["source_spans"] == []
-        assert hit["metadata"]["related_assets"][0]["asset_id"] == derived["content_data"]["asset_id"]
+        metadata = hit["metadata"]
+        assert metadata["artifact_type"] == "derived"
+        assert metadata["source_spans"] == []
+        asset, = metadata["related_assets"]
+        assert asset["asset_id"] == derived["content_data"]["asset_id"]
+        source_ref, image_ref = metadata["source_ref"], asset["image_ref"]
+        assert source_ref == f"/sources/{after}"
+        assert image_ref == f"/sources/{after}/images/{asset['occurrence_id']}"
+        assert client.get(source_ref, headers=headers).content == original_bytes
+        download = client.get(image_ref, headers=headers)
+        assert download.status_code == 200
+        assert download.content == picture_bytes
+        assert download.headers["Content-Type"] == "image/png"
+        assert download.headers["Cache-Control"] == "no-store"
+        assert download.headers["Content-Disposition"] == 'attachment; filename="image.png"'
+        assert client.get(image_ref).status_code == 401
+        assert client.get(f"/sources/{after}/images/{asset['asset_id']}", headers=headers).status_code == 404
+        assert client.get(image_ref.replace(after, before), headers=headers).status_code == 404
+
+        image_digest = asset["asset_id"].removeprefix("sha256:")
+        image_path = settings.storage_dir / "objects" / "sha256" / image_digest[:2] / image_digest
+        image_path.chmod(0o600)
+        image_path.write_bytes(b"corrupt")
+        assert client.get(image_ref, headers=headers).status_code == 503
+        image_path.write_bytes(picture_bytes)
+
+        if file_format == "docx":
+            changed = Document(original_path)
+            changed.add_paragraph("更新後の手順です。")
+        else:
+            changed = load_workbook(original_path)
+            changed.active["A2"] = "更新後の手順です。"
+        changed.save(original_path)
+        ingest(settings, postgres_database)
+        assert client.get(source_ref, headers=headers).status_code == 404
+        assert client.get(image_ref, headers=headers).status_code == 404
+        payload["metadata_condition"]["conditions"].append({
+            "name": "target_release", "comparison_operator": "is", "value": release,
+        })
+        history = client.post("/search-with-status", headers=headers, json=payload)
+        assert history.status_code == 200, history.text
+        hit, = history.json()["records"]
+        assert hit["metadata"]["source_ref"] == source_ref + "?mode=history"
+        assert hit["metadata"]["related_assets"][0]["image_ref"] == image_ref + "?mode=history"
+        assert client.get(source_ref + "?mode=history", headers=headers).content == original_bytes
+        assert client.get(image_ref + "?mode=history", headers=headers).content == picture_bytes
+
+    engine = async_database(postgres_database.url, schema=namespace)
+    with TestClient(create_app(search, engine=engine, embedder=query_embedding)) as client:
+        assert client.get(source_ref + "?mode=history", headers=headers).status_code == 404
+        assert client.get(image_ref + "?mode=history", headers=headers).status_code == 404
 
 
 def test_office_chart_rendered_for_recognition(tmp_path, monkeypatch):

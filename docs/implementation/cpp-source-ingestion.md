@@ -121,6 +121,8 @@ cpp-scan status --config config.cpp-source.local.yaml
 
 `generate` の `--analysis` には `analyze` の出力にある `analysis_id` の値全体を指定する。形式は `analysis-` に続く32桁の小文字16進数。手入力する場合も、表示された値を省略せずに使う。`invalid_version_id` が出た場合は `--analysis` に渡した値の形式を確認する。上のコマンドは同じ設定で保存済みの解析IDを読み込むため、解析の再実行を省ける。
 
+`cpp-scan ingest` がDBスキーマの確認で止まった場合は、同じシェルで `file-scan status --config config.cpp-docs.local.yaml` を実行する。DBを更新せずに検査結果を表示する。設定ファイル名は `ingestion.file_scan_config` の指定に合わせる。対象DBを確認し、`init-db` が必要と表示された場合は上の手順4を実行して、元の `generation_id` で取込を再試行する。
+
 `analyze`は安定コピー、原本ハッシュ、UTF-8作業コピー、文字コードと行・バイト位置対応を保存する。デコードできない原本も保持する。再度ファイル一覧と内容を照合して収集中の変化を検出する。通常フォルダは全ファイルが同一時点であることを保証しないため、固定したGitアーカイブ等を推奨する。
 
 CodeWikiの`DependencyGraphBuilder`で構造を取得し、C++字句・XML・QML字句からQt情報を補完する。標準の`codewiki generate`を構造解析だけのコマンドとして呼ぶことはしない。原本フォルダとスナップショットは書き換えない。

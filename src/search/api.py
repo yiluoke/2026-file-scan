@@ -3,9 +3,9 @@
 import asyncio
 import hashlib
 import hmac
-import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Request, Security
@@ -14,17 +14,29 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.security import HTTPBearer
 from starlette.background import BackgroundTask
 from sqlalchemy import select, text
+from sqlalchemy.exc import DBAPIError, TimeoutError as PoolTimeout
 
 from file_scan.db import tables as core
+from file_scan.storage import _open_no_follow
+from search import repository as repo
 from search import schema as s
 from search.config import async_database
 from search.errors import SearchError
+from search.evidence import IMAGE_ASSET_ROLES
 from search.models import SearchInput, SearchRequest, SearchResponse, RetrievalResponse
 from search.service import RetrievalService
 from search.stub import fixed_response
-from file_scan.storage import _open_no_follow
 
-logger = logging.getLogger(__name__)
+
+DownloadMode = Literal["current", "history"]
+IMAGE_EXTENSIONS = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/tiff": "tiff",
+    "image/bmp": "bmp",
+}
 
 
 class RequestBoundary:
@@ -152,6 +164,8 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
                 )
                 if set(extensions) != {"vector", "pgroonga"}:
                     raise SearchError("SEARCH_UNAVAILABLE")
+                if not await s.indexes_ready(c):
+                    raise SearchError("SEARCH_UNAVAILABLE")
             return {
                 "status": "ok",
                 "execution_mode": "local_prototype",
@@ -210,30 +224,48 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
         result = await run_search(payload, request, standard=True)
         return {"records": result["records"]}
 
-    @app.get("/sources/{publication_id}", dependencies=[Security(HTTPBearer(auto_error=False))])
-    async def source(publication_id: str, request: Request):
-        if config.test_mode:
+    async def download(publication_id, mode, *, occurrence_id=None):
+        if config.test_mode or (mode == "history" and not allow_history):
             raise SearchError("SCOPE_NOT_FOUND")
         try:
-            async with engine.connect() as c:
-                catalog = await service.scope(
-                    c,
-                    SearchRequest.model_validate(
-                        {
-                            "knowledge_id": config.ingestion.knowledge_id,
-                            "query": "source",
-                            "retrieval_setting": {"top_k": 1, "score_threshold": 0},
-                        }
-                    ),
+            async with asyncio.timeout(config.total_timeout):
+                asset, root = await download_asset(publication_id, mode, occurrence_id)
+                return await verified_download(asset, root, is_image=occurrence_id is not None)
+        except SearchError:
+            raise
+        except TimeoutError, PoolTimeout:
+            raise SearchError("SEARCH_TIMEOUT", retryable=True) from None
+        except DBAPIError as error:
+            if getattr(error.orig, "sqlstate", None) == "57014":
+                raise SearchError("SEARCH_TIMEOUT", retryable=True) from None
+            raise SearchError("SEARCH_UNAVAILABLE", retryable=True) from None
+        except Exception:
+            raise SearchError("SEARCH_UNAVAILABLE") from None
+
+    async def download_asset(publication_id, mode, occurrence_id):
+        knowledge_id = config.ingestion.knowledge_id
+        async with engine.connect() as c:
+            c = await c.execution_options(
+                isolation_level="REPEATABLE READ", postgresql_readonly=True
+            )
+            async with c.begin():
+                await c.execute(
+                    text("SELECT set_config('statement_timeout', :timeout, true)"),
+                    {"timeout": str(config.statement_timeout_ms)},
                 )
+                catalog = await repo.catalog(c, knowledge_id)
                 publication = (
                     (
                         await c.execute(
-                            select(s.publications)
+                            select(
+                                s.publications.c.release_id,
+                                s.publications.c.document_id,
+                                s.publications.c.source_version,
+                            )
                             .join(s.releases)
                             .where(
                                 s.publications.c.publication_id == publication_id,
-                                s.releases.c.knowledge_id == config.ingestion.knowledge_id,
+                                s.releases.c.knowledge_id == knowledge_id,
                             )
                         )
                     )
@@ -242,24 +274,30 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
                 )
                 if not publication:
                     raise SearchError("SCOPE_NOT_FOUND")
-                if publication["release_id"] != catalog["release_id"]:
-                    if not allow_history:
+                if mode == "current":
+                    if not catalog["default_release_id"]:
+                        raise SearchError("RELEASE_UNRESOLVED")
+                    if publication["release_id"] != catalog["default_release_id"]:
                         raise SearchError("SCOPE_NOT_FOUND")
-                    catalog = catalog | {
-                        "release_id": publication["release_id"],
-                        "search_mode": "history",
-                    }
-                from search.repository import coverage, expected
-
-                _, eligible = coverage(await expected(c, catalog), catalog)
+                scope = catalog | {"release_id": publication["release_id"], "search_mode": mode}
+                _, eligible = repo.coverage(
+                    await repo.expected(c, scope, document_id=publication["document_id"]), scope
+                )
                 if publication_id not in eligible:
                     raise SearchError("SCOPE_NOT_FOUND")
+
+                asset_id = publication["source_version"]
+                if occurrence_id is not None:
+                    asset_id = await image_asset_id(c, publication_id, occurrence_id)
+                    if asset_id is None:
+                        raise SearchError("SCOPE_NOT_FOUND")
+                assets = core["artifact_assets"]
                 asset = (
                     (
                         await c.execute(
-                            select(core["artifact_assets"]).where(
-                                core["artifact_assets"].c.asset_id == publication["source_version"],
-                                core["artifact_assets"].c.storage_status == "available",
+                            select(assets.c.asset_id, assets.c.byte_size, assets.c.mime_type).where(
+                                assets.c.asset_id == asset_id,
+                                assets.c.storage_status == "available",
                             )
                         )
                     )
@@ -269,60 +307,101 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
                 root = (
                     await c.execute(select(core["ingestion_settings"].c.storage_root))
                 ).scalar_one()
-            if Path(root) != config.ingestion.storage_dir.resolve():
-                raise SearchError("SEARCH_UNAVAILABLE")
-            # CASのIDからパスを導出し、任意のDB値・URL・利用者入力をパスにしない。
-            digest = asset["asset_id"].removeprefix("sha256:")
-            if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
-                raise SearchError("SEARCH_UNAVAILABLE")
-            path = Path(root) / "objects" / "sha256" / digest[:2] / digest
+        if Path(root) != config.ingestion.storage_dir.resolve():
+            raise SearchError("SEARCH_UNAVAILABLE")
+        return asset, Path(root)
 
-            def open_verified():
-                handle = _open_no_follow(path)
-                try:
-                    checksum, size = hashlib.sha256(), 0
-                    while data := handle.read(1024 * 1024):
-                        checksum.update(data)
-                        size += len(data)
-                    if checksum.hexdigest() != digest or size != asset["byte_size"]:
-                        raise OSError("stored_asset_integrity_failed")
-                    handle.seek(0)
-                    return handle
-                except BaseException:
-                    handle.close()
-                    raise
+    @app.get(
+        "/sources/{publication_id}",
+        response_class=StreamingResponse,
+        dependencies=[Security(HTTPBearer(auto_error=False))],
+    )
+    async def source(publication_id: str, mode: DownloadMode = "current"):
+        return await download(publication_id, mode)
 
-            opening = asyncio.create_task(asyncio.to_thread(open_verified))
-            try:
-                handle = await asyncio.shield(opening)
-            except asyncio.CancelledError:
-
-                def close_cancelled(task):
-                    if not task.cancelled() and task.exception() is None:
-                        task.result().close()
-
-                opening.add_done_callback(close_cancelled)
-                raise
-
-            def verified_stream():
-                try:
-                    while data := handle.read(65536):
-                        yield data
-                finally:
-                    handle.close()
-
-            return StreamingResponse(
-                verified_stream(),
-                media_type="application/octet-stream",
-                background=BackgroundTask(handle.close),
-                headers={
-                    "Content-Disposition": 'attachment; filename="source"',
-                    "Cache-Control": "no-store",
-                },
-            )
-        except SearchError:
-            raise
-        except Exception:
-            raise SearchError("SEARCH_UNAVAILABLE") from None
+    @app.get(
+        "/sources/{publication_id}/images/{occurrence_id}",
+        response_class=StreamingResponse,
+        dependencies=[Security(HTTPBearer(auto_error=False))],
+    )
+    async def image(publication_id: str, occurrence_id: str, mode: DownloadMode = "current"):
+        return await download(publication_id, mode, occurrence_id=occurrence_id)
 
     return app
+
+
+async def image_asset_id(connection, publication_id, occurrence_id):
+    # 現行の取り込みテーブルは使わず、この公開コピーに凍結した出現だけを認める。
+    matches = (
+        await connection.execute(
+            select(s.blocks.c.assets).where(
+                s.blocks.c.publication_id == publication_id,
+                s.blocks.c.assets.contains([{"occurrence_id": occurrence_id}]),
+            )
+        )
+    ).scalars()
+    return next(
+        (
+            entry["asset_id"]
+            for assets in matches
+            for entry in assets
+            if entry["occurrence_id"] == occurrence_id and entry["asset_role"] in IMAGE_ASSET_ROLES
+        ),
+        None,
+    )
+
+
+async def verified_download(asset, root, *, is_image):
+    # CASのIDからパスを導出し、任意のDB値・URL・利用者入力をパスにしない。
+    digest = asset["asset_id"].removeprefix("sha256:")
+    if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
+        raise SearchError("SEARCH_UNAVAILABLE")
+    path = root / "objects" / "sha256" / digest[:2] / digest
+
+    def open_verified():
+        handle = _open_no_follow(path)
+        try:
+            checksum, size = hashlib.sha256(), 0
+            while data := handle.read(1024 * 1024):
+                checksum.update(data)
+                size += len(data)
+            if checksum.hexdigest() != digest or size != asset["byte_size"]:
+                raise OSError("stored_asset_integrity_failed")
+            handle.seek(0)
+            return handle
+        except BaseException:
+            handle.close()
+            raise
+
+    opening = asyncio.create_task(asyncio.to_thread(open_verified))
+    try:
+        handle = await asyncio.shield(opening)
+    except asyncio.CancelledError:
+
+        def close_cancelled(task):
+            if not task.cancelled() and task.exception() is None:
+                task.result().close()
+
+        opening.add_done_callback(close_cancelled)
+        raise
+
+    def verified_stream():
+        try:
+            while data := handle.read(65536):
+                yield data
+        finally:
+            handle.close()
+
+    media_type, filename = "application/octet-stream", "image" if is_image else "source"
+    if is_image and (extension := IMAGE_EXTENSIONS.get(asset["mime_type"])):
+        media_type, filename = asset["mime_type"], f"image.{extension}"
+    return StreamingResponse(
+        verified_stream(),
+        media_type=media_type,
+        background=BackgroundTask(handle.close),
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

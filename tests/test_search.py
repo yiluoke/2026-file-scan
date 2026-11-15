@@ -166,7 +166,7 @@ def test_unpublished_not_returned_and_compat_rejects_incomplete(search_db):
 
 
 def test_update_excludes_old_current_and_history_is_explicit(search_db):
-    settings, engine, gen, release, factory, _ = search_db
+    settings, engine, gen, release, factory, calls = search_db
     pub = publish_first(search_db)
     old = settings.sources[0].root / "manual.txt"
     old.write_text("更新後の仕様 E9999。\n")
@@ -176,6 +176,7 @@ def test_update_excludes_old_current_and_history_is_explicit(search_db):
         assert current.status_code == 200, current.text
         assert current.json()["records"] == []
         assert current.json()["retrieval_status"]["pending_updates"] == 1
+        assert calls == []
         history = body(
             metadata_condition={
                 "conditions": [
@@ -191,7 +192,7 @@ def test_update_excludes_old_current_and_history_is_explicit(search_db):
 
 
 def test_deleted_source_removed_even_from_history(search_db):
-    settings, engine, _, release, factory, _ = search_db
+    settings, engine, _, release, factory, calls = search_db
     pub = publish_first(search_db)
     (settings.sources[0].root / "manual.txt").unlink()
     ingest(settings, engine)
@@ -201,9 +202,10 @@ def test_deleted_source_removed_even_from_history(search_db):
         assert response.json()["records"] == []
         assert response.json()["retrieval_status"]["failed_documents"] == 1
         assert client.get("/sources/" + pub, headers=AUTH).status_code == 404
+    assert calls == []
 
 
-def test_index_missing_is_coverage_not_successful_full_search(search_db):
+def test_missing_vectors_are_reported_as_incomplete_coverage(search_db):
     settings, engine, gen, _, factory, _ = search_db
     with engine.begin() as c:
         c.execute(tables["chunk_embeddings"].delete())
@@ -214,6 +216,26 @@ def test_index_missing_is_coverage_not_successful_full_search(search_db):
         assert response.json()["records"]
         assert response.json()["retrieval_status"]["index_pending_documents"] == 1
         assert client.post("/retrieval", json=body(), headers=AUTH).status_code == 409
+
+
+def test_unusable_fulltext_index_rejects_readiness_and_search_before_embedding(search_db):
+    _, engine, _, _, factory, calls = search_db
+    publish_first(search_db)
+    with engine.begin() as connection:
+        connection.execute(text("DROP INDEX ix_search_chunks_fulltext"))
+        # A same-name index using a different access method does not restore the PGroonga lane.
+        connection.execute(text(
+            "CREATE INDEX ix_search_chunks_fulltext ON search_chunks (search_text)"
+        ))
+    with pytest.raises(schema.SearchIndexError, match="ix_search_chunks_fulltext"):
+        schema.migrate(engine)
+    with factory() as client:
+        assert client.get("/healthz").status_code == 503
+        for route in ("/search-with-status", "/retrieval"):
+            result = client.post(route, json=body(), headers=AUTH)
+            assert result.status_code == 503
+            assert result.json()["code"] == "SEARCH_UNAVAILABLE"
+    assert calls == []
 
 
 @pytest.mark.parametrize(
@@ -410,13 +432,14 @@ def test_external_embedding_does_not_hold_database_connection(search_db):
 
 def test_threshold_no_match_and_feature_filter(search_db):
     publish_first(search_db, feature_ids=["closing"])
-    *_, factory, _ = search_db
+    *_, factory, calls = search_db
     with factory() as client:
         request = body(query="ZZZ_NO_MATCH", retrieval_setting={"top_k": 5, "score_threshold": 1})
         response = client.post("/search-with-status", json=request, headers=AUTH)
         assert response.status_code == 200, response.text
         assert response.json()["records"] == []
         assert response.json()["retrieval_status"]["result_state"] == "no_match"
+        calls.clear()
         filtered = body(
             metadata_condition={
                 "conditions": [
@@ -425,6 +448,30 @@ def test_threshold_no_match_and_feature_filter(search_db):
             }
         )
         assert client.post("/retrieval", json=filtered, headers=AUTH).json() == {"records": []}
+        assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("vector", "minimum"), [([-1.0, 0.0, 0.0], 0.0), ([0.1, 1.0, 0.0], 0.5)]
+)
+def test_weak_semantic_neighbors_do_not_become_evidence_at_zero_rrf_threshold(
+    search_db, vector, minimum
+):
+    settings, _, _, _, factory, _ = search_db
+    publish_first(search_db)
+
+    async def embed(query, profile):
+        return vector
+
+    config = SearchSettings(settings, "search-test-key", semantic_min_cosine_similarity=minimum)
+    with factory(config=config, embedder=embed) as client:
+        response = client.post(
+            "/search-with-status", json=body(query="恒星物理学超新星爆発"), headers=AUTH
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["retrieval_status"]["coverage_state"] == "complete"
+        assert response.json()["retrieval_status"]["result_state"] == "no_match"
+        assert response.json()["records"] == []
 
 
 def test_source_corruption_fails_before_streaming(search_db):
@@ -511,7 +558,7 @@ def test_database_timeout_cancels_statement_and_pool_recovers(search_db, monkeyp
     publish_first(search_db)
     from search import repository
 
-    async def blocked(connection, *args):
+    async def blocked(connection, *args, **kwargs):
         await connection.execute(text("SELECT pg_sleep(0.2)"))
         return [[], [], []]
 

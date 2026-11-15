@@ -113,6 +113,14 @@ def test_mode_requires_yaml_boolean(test_config, mode):
         config.load_search_settings(test_config)
 
 
+@pytest.mark.parametrize("minimum", [-0.1, 1.1, "0.5", True, float("nan")])
+def test_semantic_minimum_rejects_invalid_yaml_values(test_config, minimum):
+    text = yaml.safe_dump({"search": {"test_mode": True, "semantic_min_cosine_similarity": minimum}})
+    test_config.write_text(text, encoding="utf-8")
+    with pytest.raises(ConfigError, match="search.semantic_min_cosine_similarity"):
+        config.load_search_settings(test_config)
+
+
 @pytest.mark.parametrize("section", [None, "true", [], True])
 def test_search_section_requires_mapping(test_config, section):
     test_config.write_text(yaml.safe_dump({"search": section}), encoding="utf-8")

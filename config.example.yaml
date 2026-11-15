@@ -7,6 +7,7 @@ environment: sample
 # 検索APIの接続試験。trueではDB・Embeddingを使わず固定文言を返します。
 search:
   test_mode: false
+  semantic_min_cosine_similarity: 0.0  # 意味検索では正の類似度を必須とし、実資料で下限を調整
 
 # ローカル検証もPostgreSQL＋pgvectorを使います。
 # FILE_SCAN_DATABASE_URLを設定すると、以下の値より環境変数が優先されます。

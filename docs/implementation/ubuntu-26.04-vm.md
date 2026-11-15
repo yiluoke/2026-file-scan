@@ -2,7 +2,7 @@
 
 2026-11-02：日本語PDF OCRにRapidOCR＋ONNX Runtime CPUを追加した。モデル取得コマンドはOCRモデルも配置する。設定にpdf_ocr（enabled=true、mode=auto、scale=3.0、timeout_seconds=1800）を含める。モデルと両manifestは実行ユーザーが読める場所へ配置する。既存環境更新と受入確認は[日本語OCR](rapidocr-pdf.md)を参照。
 
-更新日：2026-11-03。導入先はWindowsホスト上で稼働するUbuntu 26.04 LTSの仮想マシン。アプリ・Python・DB・モデルはUbuntu内へ配置する。本書はその環境向けの構築案と実行例であり、Ubuntu実機での受入確認はこれから行う。
+更新日：2026-11-15。導入先はWindowsホスト上で稼働するUbuntu 26.04 LTSの仮想マシン。アプリ・Python・DB・モデルはUbuntu内へ配置する。本書はその環境向けの構築案と実行例であり、Ubuntu実機での受入確認はこれから行う。
 
 必要ライブラリの版と役割、モデル準備、テーブルSQLの詳細は[共通の環境構築手順](environment-setup.md)も参照する。以下はUbuntu VMのコマンドであり、Windows PowerShellでは実行しない。
 
@@ -40,37 +40,43 @@ sudo apt update
 apt-cache policy postgresql-18 postgresql-18-pgvector libgroonga-dev
 sudo apt install -y postgresql-18 postgresql-client-18 postgresql-server-dev-18
 sudo adduser --system --group --home /var/lib/file-scan file-scan
-sudo install -d -o file-scan -g file-scan /opt/file-scan
+sudo install -d -o root -g root -m 0755 /opt/file-scan
 sudo install -d -o file-scan -g file-scan /var/lib/file-scan/storage /var/lib/file-scan/reports /var/lib/file-scan/models
 sudo install -d -o file-scan -g file-scan /var/cache/file-scan/tiktoken
 sudo systemctl enable --now postgresql
 pg_lsclusters
 ```
 
-配布したソース一式を`/opt/file-scan/`へ配置し、実行ユーザーが読み書きできる権限を設定する。移設元の`.venv`やDBデータ領域はコピーしない。実行ユーザーには共有の読込権限と実体保管先の書込権限を与える。
-
-```sh
-sudo chown -R file-scan:file-scan /opt/file-scan
-```
+配布ソース一式を管理者が`/opt/file-scan/`へ直接配置し、配置先とソースはroot所有で実行ユーザーが読み取れるようにする。既存環境が`file-scan`所有の場合は処理を停止し、設定を保護してからプロジェクトのディレクトリと配布ソースの所有者・書込権限を見直す。移設元の`.venv`やDBデータ領域はコピーしない。実行ユーザーには共有の読込権限と`/var/lib/file-scan/`・`/var/cache/file-scan/`の必要な書込権限を与える。
 
 ## 3. Ubuntu標準Python 3.14と固定依存
 
-管理者のシェルから、実行ユーザーのシェルへ切り替える。
+新規導入時はsudoを使える一般ユーザーが、書き込み可能な一時ディレクトリで配布ソースのビルドを行う。仮想環境は最終パスに作成し、検査後にroot所有へ戻す。稼働中の仮想環境は上書きしない。
 
 ```sh
-sudo -u file-scan -H bash
-cd /opt/file-scan
-python3.14 --version
-python3.14 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements/ubuntu-26.04.lock
-python -m pip install --no-deps --no-build-isolation '.[dev,search]'
-python scripts/check_python_environment.py
-python -m pip check
-file-scan --version
+(
+  set -eu
+  umask 022
+  build_dir="$(mktemp -d)"
+  trap 'rm -rf -- "$build_dir"' EXIT
+  test ! -e /opt/file-scan/.venv
+  sudo install -d -o "$(id -u)" -g "$(id -g)" -m 0755 /opt/file-scan/.venv
+  cp -R /opt/file-scan/{pyproject.toml,README.md,requirements,scripts,src} "$build_dir/"
+  chmod -R u+w "$build_dir"
+  cd "$build_dir"
+  python3.14 --version
+  python3.14 -m venv /opt/file-scan/.venv
+  /opt/file-scan/.venv/bin/python -m pip install -r requirements/ubuntu-26.04.lock
+  /opt/file-scan/.venv/bin/python -m pip install --no-deps --no-build-isolation '.[dev,search]'
+  /opt/file-scan/.venv/bin/python scripts/check_python_environment.py
+  /opt/file-scan/.venv/bin/python -m pip check
+  /opt/file-scan/.venv/bin/file-scan --version
+  /opt/file-scan/.venv/bin/file-search --help
+  sudo chown -hR root:root /opt/file-scan/.venv
+)
 ```
 
-確認基準はPython 3.14.4。Ubuntuの保守更新でパッチ版が進んだ場合は、版の対応表とテスト結果も更新する。lockはLinuxのCPU用PyTorchを公式配布元から取得する。Ubuntuの`/usr/bin/python3`の置換は不要。以降のアプリ操作も同じ実行ユーザー・仮想環境で行う。管理者操作へ戻るときは`exit`する。
+確認基準はPython 3.14.4。Ubuntuの保守更新でパッチ版が進んだ場合は、版の対応表とテスト結果も更新する。lockはLinuxのCPU用PyTorchを公式配布元から取得する。Ubuntuの`/usr/bin/python3`の置換は不要。以降の本番アプリ操作は`file-scan`ユーザーと同じ仮想環境を使う。準備が途中で失敗した場合は、稼働中のものと区別し、今回作った不完全な`.venv`だけを確認してから再作成する。
 
 ## 4. DB拡張・DB・テーブル
 
@@ -91,30 +97,11 @@ CPU固有の最適化フラグを外し、VM移動時のCPU差を減らす例。
 
 ### PGroonga（検索APIを使う場合は必須）
 
-PGroonga公式のUbuntuパッケージ手順は確認時点で24.04／22.04を掲載している。26.04に別リリース用リポジトリをそのまま適用せず、ここでは公式のソースビルド手順を用いる。[対応環境](https://pgroonga.github.io/install/)、[ソース導入](https://pgroonga.github.io/install/source.html)
-
-Ubuntuの[libgroonga-dev](https://packages.ubuntu.com/resolute/libgroonga-dev)を使用する例。PGroonga 4.1.0が要求するGroonga 14.1.0以上を確認する。ローカルMacの16.1.4と同一バイナリにはならないため、実際の版を記録し、PGroongaの共存テストを行う。導入・索引・日本語検索の確認は[再精査したPGroonga手順](pgroonga.md)を参照。
-
-```sh
-sudo apt install -y libgroonga-dev libxxhash-dev meson ninja-build
-pkg-config --modversion groonga libxxhash
-pkg-config --atleast-version=14.1.0 groonga
-mkdir -p "$HOME/file-scan-build"
-cd "$HOME/file-scan-build"
-curl -fL https://packages.groonga.org/source/pgroonga/pgroonga-4.1.0.tar.gz -o pgroonga-4.1.0.tar.gz
-printf '%s  %s\n' '0ce8d58e73820bb74e82882afa58d6c0c5c46d43ae8349c6fc05c7097b85ee40' 'pgroonga-4.1.0.tar.gz' | sha256sum --check
-tar -xzf pgroonga-4.1.0.tar.gz
-meson setup pgroonga-build pgroonga-4.1.0 --buildtype=release --wrap-mode=nofallback -Dpg_config=/usr/lib/postgresql/18/bin/pg_config -Dinstall_to_postgresql=true -Dxxhash=enabled -Dmessage_pack=auto -Dtest=false
-meson compile -C pgroonga-build
-sudo meson install -C pgroonga-build
-sudo ldconfig
-```
-
-Groongaのヘッダー・共有ライブラリはUbuntu用パッケージを使い、Mac用の`artifacts/pgroonga-runtime`は移設しない。ソースビルドを採用する拡張は、PostgreSQLや依存ライブラリを更新した際に読み込み・再ビルド要否も確認する。
+Ubuntu 26.04の標準PostgreSQL 18には、公式APTの`postgresql-18-pgroonga`を使用できる。採用版をAPTで用意できない場合は固定ソースからの導入も選べる。いずれか一方を選び、実際の拡張・依存版を記録する。[PGroonga手順3節](pgroonga.md#3-ubuntu-2604-vmへのサーバー側導入)、[公式Ubuntu手順](https://pgroonga.github.io/install/ubuntu.html)
 
 ### DB作成とスキーマ導入
 
-管理者が新規DBを準備する。PostgreSQLのローカル管理接続例。
+取込単体または専用の検証DBを作る場合の手順。本番の検索APIと同時に導入する場合は、[検索API本番手順3節](search-api-production.md#3-ospythondb拡張)で本番DBと拡張を準備し、同5節でアプリ表を初期化する。
 
 ```sh
 sudo -u postgres psql
@@ -147,20 +134,25 @@ psql -h 127.0.0.1 -U file_scan -d file_scan -c "SELECT extname, extversion FROM 
 
 ## 5. アプリ設定・モデル
 
-実行ユーザーで`/opt/file-scan`に移動し、仮想環境を有効にする。新規なら設定例をコピーし、実際のDBパスワード・必要ならAPIキーを設定する。
-
-設定ファイルは`/opt/file-scan/`直下に置く。YAML内の相対パスは、この設定ファイルの親ディレクトリが基準となる。既存設定はコピーで上書きしない。検索APIも本番運用する場合は、[検索API本番手順の共通設定](search-api-production.md#4-共通設定と認証情報)に従い、共通の`config.local.yaml`と取込用`.env`を引き継いで、API用`.env.search`を同じ直下へ追加する。
+設定ファイルは`/opt/file-scan/`直下に置く。YAML内の相対パスは、設定ファイルの親ディレクトリが基準となる。次は新規作成時の例。管理者がDBパスワードと必要に応じてAPIキーを設定する。既存ファイルは上書きせず所有者とモードを確認する。検索APIも運用する場合は、同じ`config.local.yaml`と取込用`.env`を引き継ぎ、API用`.env.search`を追加する。[検索API本番手順4節](search-api-production.md#4-共通設定と認証情報)
 
 ```sh
-cp config.example.yaml config.local.yaml
-cp .env.example .env
-chmod 600 .env
+cd /opt/file-scan
+if [ ! -e config.local.yaml ]; then
+  sudo install -o root -g file-scan -m 0640 config.example.yaml config.local.yaml
+fi
+if [ ! -e .env ]; then
+  sudo install -o root -g root -m 0600 /dev/null .env
+fi
+sudoedit /opt/file-scan/config.local.yaml /opt/file-scan/.env
 ```
 
-`.env`へ次の辞書配置先も追加する。DB接続先は共通手順の`127.0.0.1:5432/file_scan`と`file_scan_test`を使う。
+`.env`にはDB接続先とキャッシュを設定し、Embeddingを使う場合に`OPENAI_API_KEY`を追加する。`PASSWORD`は実値をURL用にエンコードして指定する。検証DBを使用する自動テストは専用環境で行う。
 
 ```dotenv
+FILE_SCAN_DATABASE_URL=postgresql+psycopg://file_scan:PASSWORD@127.0.0.1:5432/file_scan
 TIKTOKEN_CACHE_DIR=/var/cache/file-scan/tiktoken
+HF_HOME=/var/cache/file-scan/huggingface
 ```
 
 `config.local.yaml`では保管先とモデル配置先を絶対パスにする。
@@ -171,14 +163,22 @@ report_dir: /var/lib/file-scan/reports
 docling_artifacts_path: /var/lib/file-scan/models/docling
 ```
 
+手動操作ではBashセッションで以下の関数を定義する。systemdがroot所有の`.env`を環境変数として読み、コマンドは`file-scan`ユーザーで実行する。[systemd-runの仕様](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html)、[EnvironmentFileの仕様](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#EnvironmentFile=)
+
 ```sh
-source .venv/bin/activate
-set -a
-source .env
-set +a
-python scripts/download_docling_models.py --config config.local.yaml
-python scripts/download_docling_models.py --config config.local.yaml --verify-only
-python -c "from file_scan.tokens import count_tokens; print(count_tokens('Ubuntu VMの確認'))"
+file_scan_admin() {
+  sudo systemd-run --wait --pipe --collect --quiet --expand-environment=no \
+    --property=User=file-scan --property=Group=file-scan --property=UMask=0077 \
+    --property=WorkingDirectory=/opt/file-scan \
+    --property=EnvironmentFile=/opt/file-scan/.env -- "$@"
+}
+```
+
+```sh
+sudo install -d -o file-scan -g file-scan /var/cache/file-scan/huggingface
+file_scan_admin /opt/file-scan/.venv/bin/python /opt/file-scan/scripts/download_docling_models.py --config /opt/file-scan/config.local.yaml
+file_scan_admin /opt/file-scan/.venv/bin/python /opt/file-scan/scripts/download_docling_models.py --config /opt/file-scan/config.local.yaml --verify-only
+file_scan_admin /opt/file-scan/.venv/bin/python -c "from file_scan.tokens import count_tokens; print(count_tokens('Ubuntu VMの確認'))"
 ```
 
 ## 6. Windows／NASの共有フォルダを収集する場合
@@ -233,20 +233,15 @@ sources:
 
 ## 7. Ubuntu上の受入確認
 
-最初は実共有ではなく、共通手順の公開8サンプルをローカルで取り込む。モデル・PDF・DB登録・再実行を確認してから、収集元を実共有に切り替える。仮のAPIキーの間はEmbeddingを無効にする。
+公開8サンプル、モデル・PDF・再実行の試験とpytestは、書き込み可能な検証用チェックアウトと専用DBで行う。サンプル取得スクリプトはチェックアウトにファイルを書き込む。8件の登録と再実行の8件の`unchanged`を確認する。PGroongaなしの場合は共通手順10節の取込専用テストを使う。[公開サンプルとテストの手順](environment-setup.md#7-収集元の準備と設定)
+
+本番VMで共有を設定した後は6節のマウント検査を行い、5節で定義した`file_scan_admin`で設定に基づく走査と状態を確認する。実際の取り込みは次節のサービスで行う。
 
 ```sh
-python scripts/download_samples.py
-file-scan scan --config config.local.yaml
-file-scan ingest --config config.local.yaml
-file-scan ingest --config config.local.yaml
-file-scan status --config config.local.yaml
-python scripts/test_postgres.py
-python -m pip check
-python scripts/export_postgres_schema.py --check
+file_scan_admin /opt/file-scan/.venv/bin/file-scan scan --config /opt/file-scan/config.local.yaml
+file_scan_admin /opt/file-scan/.venv/bin/file-scan status --config /opt/file-scan/config.local.yaml
+/opt/file-scan/.venv/bin/python -m pip check
 ```
-
-このサンプル検証時の`sources[].root`は`data/file-server/department`にする。実共有用へ変更する前に8件の登録と8件のunchangedを確認する。PGroongaなしの構成は、共通手順10節の取り込み専用テストを使う。
 
 記録するもの：Ubuntu版・CPU、Pythonの実パッチ版、Python依存、DB・vector・PGroonga・Groonga版、モデルlock、テストの成功／スキップ、共有への読込、再起動後の接続・マウント状態。Windowsホストの稼働・VM自動起動方針も管理者側で設定する。
 
@@ -279,9 +274,7 @@ TimeoutStartSec=infinity
 KillMode=control-group
 ```
 
-この例は6節の共有と実パスを設定した後で使う。EnvironmentFileは引用符なしの`名前=値`の形式で作り、`.env`は実行ユーザーのみが読めるようにする。
-
-検索API本番手順で`.env`をroot所有・0600へ変更した場合も、このユニットの`EnvironmentFile`は同じパスを使う。手動操作では5節の一般ユーザーによる`source .env`を使わず、[検索API本番手順の管理者シェル](search-api-production.md#5-テーブル初期化と実資料の公開)で環境変数を読み、`runuser`でアプリ処理を実行する。
+この例は6節の共有と実パスを設定した後で使う。`.env`は`名前=値`の形式で作り、root所有・`0600`にする。systemdが読み込み、`file-scan`で起動する取込処理へ環境変数を渡す。個別の管理操作には5節の`file_scan_admin`を使う。
 
 ```sh
 sudo systemctl daemon-reload

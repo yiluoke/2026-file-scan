@@ -4,6 +4,7 @@ system_id: demo-system
 environment: sample
 search:
   test_mode: false  # trueでは検索APIがDB・Embeddingを使わず固定文言を返します
+  semantic_min_cosine_similarity: 0.0
 # パスワード入りURLはこのファイルへ書かず、FILE_SCAN_DATABASE_URLで渡します。
 database_url: postgresql+psycopg://file_scan@127.0.0.1:5432/file_scan
 storage_dir: artifacts/storage

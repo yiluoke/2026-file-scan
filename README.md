@@ -167,10 +167,12 @@ PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。�
 
 ```sh
 file-search init-db --config config.local.yaml
-file-search create-release --config config.local.yaml --release <対象業務版>
+file-search create-release --config config.local.yaml --release '<対象業務版>'
 ```
 
 確認した文書・世代を`file-search publish`で明示公開し、`FILE_SCAN_SEARCH_API_KEY`を設定して`file-search serve --config config.local.yaml`で起動する。管理者コマンド、入力例、実Embedding設定、Dify接続は[検索APIの操作手順](docs/implementation/search-api.md)を参照。
+
+誤公開は`file-search unpublish`で指定した業務版から取り下げられる。検索結果の`source_ref`と`related_assets[].image_ref`は、同じ接続キーで原本と対応画像を取得するための参照先となる。
 
 検索表は取り込みv3と別の版で追加する。既存のdraft・世代選択・キャッシュは維持し、既存資料を自動公開しない。開発DBには検索表のみを追加済み。
 

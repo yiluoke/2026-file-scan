@@ -60,10 +60,12 @@ async def resolve(connection, request, knowledge_id, *, allow_history=False):
         row = (
             (
                 await connection.execute(
-                    select(s.releases).where(
+                    select(s.releases)
+                    .where(
                         s.releases.c.knowledge_id == knowledge_id,
                         or_(s.releases.c.release_id == target, s.releases.c.name == target),
                     )
+                    .order_by((s.releases.c.release_id == target).desc())
                 )
             )
             .mappings()
@@ -74,7 +76,7 @@ async def resolve(connection, request, knowledge_id, *, allow_history=False):
     return config | {"release_id": row["release_id"], "search_mode": mode}
 
 
-async def expected(connection, scope):
+async def expected(connection, scope, *, document_id=None):
     docs, members, selected, gens = (
         core[n]
         for n in (
@@ -129,6 +131,8 @@ async def expected(connection, scope):
     )
     if scope["search_mode"] == "history":
         query = query.where(s.bindings.c.release_id == scope["release_id"])
+    if document_id is not None:
+        query = query.where(docs.c.document_id == document_id)
     return [
         dict(r) for r in (await connection.execute(query.order_by(docs.c.document_id))).mappings()
     ]
@@ -194,17 +198,30 @@ def candidate_filter(publication_ids, filters):
     return and_(*clauses)
 
 
-async def lanes(connection, query, vector, publication_ids, filters, limit):
+async def has_candidates(connection, publication_ids, filters):
+    if not publication_ids:
+        return False
+    candidate = (
+        select(s.chunks.c.chunk_id)
+        .select_from(s.chunks.join(s.publications))
+        .where(candidate_filter(publication_ids, filters))
+    )
+    return (await connection.execute(select(candidate.exists()))).scalar_one()
+
+
+async def lanes(connection, query, vector, publication_ids, filters, limit, *, semantic_minimum):
     graph = s.chunks.join(s.publications)
     allowed = candidate_filter(publication_ids, filters)
     stable = [s.publications.c.generation_id, s.chunks.c.chunk_id, s.chunks.c.publication_id]
     key = [s.chunks.c.publication_id, s.chunks.c.chunk_id]
     distance = s.chunks.c.embedding.cosine_distance(vector)
+    max_distance = 1.0 - semantic_minimum
+    similarity_matches = distance < 1.0 if max_distance == 1.0 else distance <= max_distance
     dense = (
         await connection.execute(
             select(*key)
             .select_from(graph)
-            .where(allowed, s.chunks.c.embedding.is_not(None))
+            .where(allowed, s.chunks.c.embedding.is_not(None), similarity_matches)
             .order_by(distance, *stable)
             .limit(limit)
         )

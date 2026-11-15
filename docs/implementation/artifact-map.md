@@ -277,7 +277,7 @@ DB・保管先はアプリが管理する成果物で、抽出結果を確認す
 ## 検索API
 
 - 実装：`src/search/`。取り込みv3のmetadataと分離した検索v1を管理する。
-- 操作：[検索APIの操作手順](search-api.md)。`file-search`から公開対象・採用版を明示管理する。
-- API：`/search-with-status`、Dify互換`/retrieval`、原本取得`/sources/{publication_id}`。
+- 操作：[検索APIの操作手順](search-api.md)。`file-search`から採用版の公開・取り下げを管理する。
+- API：`/search-with-status`、Dify互換`/retrieval`、原本取得`/sources/{publication_id}`、公開画像取得`/sources/{publication_id}/images/{occurrence_id}`。
 - 動的な契約：実行中APIの`/openapi.json`。本文を含まない検索監視は`search_events`へ保存する。
-- 検証：`tests/test_search.py`。取り込みへの影響、公開・更新・出典、HTTP契約、予算、失敗・切断を検証する。
+- 検証：`tests/test_search.py`、`tests/test_search_publication.py`、`tests/test_image_analysis.py`で、取り込みとの整合、公開・取り下げ、原本・画像取得、検索条件、失敗・切断を検証する。

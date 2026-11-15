@@ -3,6 +3,7 @@
 from collections import defaultdict
 from datetime import timezone
 import math
+from uuid import uuid4
 
 from sqlalchemy import and_, select
 
@@ -114,6 +115,24 @@ def create_release(engine, settings, name, *, make_default=False):
     return release_id
 
 
+def _find_release(connection, knowledge_id, release):
+    row = (
+        connection.execute(
+            select(s.releases)
+            .where(
+                s.releases.c.knowledge_id == knowledge_id,
+                (s.releases.c.release_id == release) | (s.releases.c.name == release),
+            )
+            .order_by((s.releases.c.release_id == release).desc())
+        )
+        .mappings()
+        .first()
+    )
+    if not row:
+        raise PublicationError("release_not_found")
+    return row
+
+
 def publish(
     engine,
     settings,
@@ -132,18 +151,7 @@ def publish(
     if len(feature_ids) > 20 or any(not x.strip() or len(x) > 256 for x in feature_ids):
         raise PublicationError("invalid_feature_ids")
     with ingestion_lock(engine), engine.begin() as c:
-        rel = (
-            c.execute(
-                select(s.releases).where(
-                    s.releases.c.knowledge_id == settings.knowledge_id,
-                    (s.releases.c.release_id == release) | (s.releases.c.name == release),
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if not rel:
-            raise PublicationError("release_not_found")
+        rel = _find_release(c, settings.knowledge_id, release)
         catalog = (
             c.execute(
                 select(s.catalogs)
@@ -490,3 +498,49 @@ def publish(
             )
         )
     return publication_id
+
+
+def unpublish(engine, settings, release, document_id, withdrawn_by):
+    """指定した版の公開参照を解除し、公開コピーと操作記録を残す。"""
+    if not withdrawn_by.strip() or len(withdrawn_by) > 128 or "\x00" in withdrawn_by:
+        raise PublicationError("withdrawn_by_required")
+
+    with ingestion_lock(engine), engine.begin() as c:
+        release_id = _find_release(c, settings.knowledge_id, release)["release_id"]
+        binding = (s.bindings.c.release_id == release_id) & (
+            s.bindings.c.document_id == document_id
+        )
+        current = c.execute(
+            select(s.bindings.c.publication_id).where(binding).with_for_update()
+        ).first()
+        if current is None:
+            raise PublicationError("release_document_not_found")
+
+        publication_id = current.publication_id
+        if publication_id is not None:
+            c.execute(s.bindings.update().where(binding).values(publication_id=None))
+            c.execute(
+                s.catalogs.update()
+                .where(s.catalogs.c.knowledge_id == settings.knowledge_id)
+                .values(revision=s.catalogs.c.revision + 1)
+            )
+            c.execute(
+                s.events.insert().values(
+                    request_id=str(uuid4()),
+                    knowledge_id=settings.knowledge_id,
+                    release_id=release_id,
+                    result_status="publication_withdrawn",
+                    duration_ms=0,
+                    summary={
+                        "document_id": document_id,
+                        "publication_id": publication_id,
+                        "withdrawn_by": withdrawn_by,
+                    },
+                )
+            )
+        return {
+            "release_id": release_id,
+            "document_id": document_id,
+            "withdrawn_publication_id": publication_id,
+            "changed": publication_id is not None,
+        }

@@ -2,7 +2,7 @@
 
 画像認識で作成した説明は、原図と照合したうえで `publish --include-image-descriptions` を指定して公開できる。検索結果の `artifact_type: derived` と `related_assets` で由来を確認できる。[画像認識の手順](image-analysis.md)
 
-実装日：2026-10-25、検証更新：2026-10-26。文書ACL・SSOを保留した`local_prototype`。Dify本体の配備・Chatflowは別途行う。
+初回実装日：2026-10-25。手順更新：2026-11-15。文書ACL・SSOを保留した`local_prototype`。Dify配備とChatflowは別途構成する。
 
 Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番環境構築手順](search-api-production.md)を参照。
 
@@ -10,12 +10,12 @@ Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番�
 
 - `POST /search-with-status`：根拠、出典、対象版、取り込み・公開・索引の不足を返す。
 - `POST /retrieval`：Dify External Knowledge API互換。不足を表せないため、coverage未完了は409。
-- `GET /sources/{publication_id}`：接続キーと公開対象を照合し、保管原本のSHA-256を検証して返す。
-- `GET /healthz`：検索スキーマ・DB接続・vector／PGroongaを確認。公開済み資料や実Embeddingの準備完了を意味しない。
+- `GET /sources/{publication_id}`と`GET /sources/{publication_id}/images/{occurrence_id}`：接続キーと採用状況を照合し、保管原本・画像のSHA-256とサイズを検証して返す。
+- `GET /healthz`：DB接続、検索スキーマ、vector・PGroonga、必須の全文・識別子・機能ラベル索引を確認する。公開資料、ベクトル、実Embeddingは別途受け入れ確認する。
 - `/docs`、`/openapi.json`：リクエスト、レスポンス、Bearer接続認証を記載したAPI定義。
-- `file-search`：検索専用DB初期化、業務版作成、世代の明示公開、状態確認、API起動。
+- `file-search`：検索専用DB初期化、業務版作成、世代の明示公開と取り消し、状態確認、API起動。
 
-意味検索はpgvectorのcosine正確検索、全文検索はPGroonga、識別子は大文字小文字・記号を保持した配列一致。各50候補をRRFで統合する。全文経路はGroongaの`TokenBigram`＋`NormalizerAuto`で質問を分割し、先頭から重複を除いた最大16語（各128文字以内・2文字以上）をリテラルの`&@`でOR検索する。形態素解析・質問展開・rerankerは使用していない。検索語選択と実データでの精度は今後評価する。
+意味検索はpgvectorのcosine正確検索、全文検索はPGroonga、識別子は大文字小文字・記号を保持した配列一致。各50候補をRRFで統合する。全文経路はGroongaの`TokenBigram`＋`NormalizerAuto`で質問を分割し、先頭から重複を除いた最大16語（各128文字以内・2文字以上）をリテラルの`&@`でOR検索する。`search_config_version`は`poc-v2`、RRFスコアの算出方法は`rrf-bound-v1`。
 
 ## 取り込み処理への影響を抑える構成
 
@@ -31,7 +31,7 @@ Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番�
 
 ## 準備
 
-現在の`pyproject.toml`に対応するPython環境を用意し、プロジェクトのルートで実行する。Python環境全体の構築は[環境構築手順](environment-setup.md)を参照。
+以下は開発チェックアウトでの例。プロジェクトのルートで実行する。本番VMでは配置と認証情報を本番手順に従って設定し、管理コマンドを`file_scan_admin`で起動する。[開発環境構築手順](environment-setup.md)、[本番の初期化手順](search-api-production.md#5-テーブル初期化と実資料の公開)
 
 ```sh
 source .venv/bin/activate
@@ -45,6 +45,8 @@ file-search init-db --config config.local.yaml
 ```
 
 `search`追加依存はFastAPI・Starlette・Uvicorn・HTTPX・greenletを固定版で導入する。取り込みだけの利用では不要。`file-search init-db`にはPostgreSQLと[PGroongaの導入](pgroonga.md)が必要で、拡張のインストールや取り込みv3の初期化をAPI起動時に暗黙実行しない。
+
+既存の検索スキーマで必須索引が欠落または無効の場合、`file-search init-db`は対象名を報告する。通常モードのhealthと検索は503を返す。索引の修復はDB管理者が行う。[PGroongaの索引確認手順](pgroonga.md#5-検索テーブル全文索引と公開資料を準備する)
 
 既存の開発DBへは検索表だけを追加済み。資料の公開・業務版作成は行っていない。
 
@@ -78,6 +80,19 @@ file-search status --config config.local.yaml
 
 検索プロファイルは作成時の保存済みEmbedding設定を使う。異なるモデルを既存ナレッジへ混ぜる変更は拒否する。モデル変更の移行は別途行う。
 
+## 公開の取り消し
+
+公開を取り消す原本・対象版・操作者を指定する。本番では上記コマンドと同様に`file_scan_admin`を使う。
+
+```sh
+file-search unpublish --config config.local.yaml \
+  --release poc-release-1 \
+  --document-id 'sha256:<取り消す原本の論理ID>' \
+  --withdrawn-by '操作者'
+```
+
+対象版の採用を解除し、その版の現行・履歴検索や原本・画像の取得から外す。予定原本はcoverageに残る。公開コピーと原本は保存し、他の版への採用は維持する。変更時には`search_events`へ`publication_withdrawn`として操作者・原本ID・公開IDを記録する。採用していない予定原本への再実行は`changed: false`を返す。必要な検査と承認を行い、`publish`で改めて採用できる。
+
 ## APIの起動と確認
 
 接続用キーは取り込み用のOpenAI APIキーと別に設定する。例の値は自分の接続用キーへ置き換え、Gitや通常ログへ保存しない。
@@ -103,11 +118,16 @@ curl --fail-with-body http://127.0.0.1:8000/search-with-status \
 - 未公開・更新待ち・失敗した予定原本もcoverageへ含める。追加フィルターでその予定対象を消さない。
 - 原本の更新・削除・利用不能は、取り込みが検出してDBへ反映した状態を使う。API要求ごとに共有フォルダ全体を再走査する処理は行わない。
 - 現行検索では古い公開コピーへ戻らない。履歴は起動時に`--allow-history`を付け、`target_release is <release IDまたは名前>`を明示した場合だけ使える。削除・利用不能・対象外の原本は履歴にも返さない。
-- 質問Embeddingには、採用プロファイルのモデル・次元数と、設定済みOpenAI接続情報を使用する。`embedding.enabled=false`・仮キーで、公開候補の意味検索を要求すると503。実APIへ暗黙送信したり、全文検索だけへ縮退したりしない。公開候補がゼロならEmbeddingは呼ばない。
+- 質問Embeddingには、採用プロファイルのモデル・次元数と、設定済みOpenAI接続情報を使用する。原本の状態・採用版・追加フィルターを適用した公開チャンクがゼロなら質問Embeddingを呼ばず、対象版全体のcoverageは計算する。公開チャンクがある場合の`embedding.enabled=false`・仮キー・Embedding障害は503または504として扱う。
+- `search.semantic_min_cosine_similarity`は意味検索の候補段階の下限。数値`0.0`〜`1.0`を指定でき、既定の`0.0`でもcosine類似度が正の候補に限る。`score_threshold`は全文・識別子を加えたRRFの最終スコアに適用する。実資料と根拠なし質問の両方で閾値を評価する。
 - 全体10秒、Embedding4秒、各SQL2秒、DB接続待ち1秒、同時検索4件（1プロセス）。同時検索枠を1秒以内に取れなければ429と`Retry-After: 1`。外部APIのSDK再試行は0。
 - 切断・期限超過時は検索とSQL／外部要求をキャンセルし、接続を解放する。
 - 返却は最大20レコード、各2000トークン・合計6000トークン、JSON全体256 KiB。文脈も件数へ含める。引用を切り出した場合は原文字範囲を保持し、正確な位置へ狭められないPDFのbbox・Excelのセル範囲はブロック粒度と明示する。
 - 表を予算内に追跡可能な形で返せない場合は、そのレコードを落として次候補を試す。本文を生成要約へ置換しない。
+
+### 原本と画像を確認する
+
+原本は`metadata.source_ref`、公開時に凍結した`original_image`と`region_image`は`metadata.related_assets[].image_ref`を使う。どちらもAPIのベースURLへ相対URLを付け、検索と同じBearerキーを送る。原本・画像の取得は現行の採用状況を照合する。履歴検索の参照には`?mode=history`が付くので保持する。この場合は起動時の`--allow-history`が必要。未公開、取り消し済み、範囲外の参照は404。実体の検証に失敗した場合は503となる。画像のバイト列は検索結果のJSONと別に取得する。
 
 ## DBを使わないAPIテストモード
 
@@ -131,22 +151,24 @@ file-search serve --config config.search-test.example.yaml --port 8000
 
 レコードの`metadata.test_mode`は`true`。状態付き応答は`execution_mode: test`、`coverage_state: unknown`とし、DBを確認していない版・プロファイル・件数は`null`にする。`/retrieval`も接続確認用の固定応答として200を返し、通常検索のcoverage判定は行わない。
 
-DBエンジン・検索サービスを生成せず、SQL・監視イベントの書き込み・質問Embedding・トークナイザーの取得を行わない。`GET /healthz`もDBへ接続せず`execution_mode: test`と`database: not_used`を返し、`GET /sources/{publication_id}`は404となる。
+接続試験はDB、検索サービス、質問Embedding、トークナイザーを使わない。`GET /healthz`は`execution_mode: test`と`database: not_used`を返す。原本・画像の取得は404となる。
 
 Bearer接続認証、JSON形式・項目・文字数・32 KiBの本文上限は引き続き検査する。テストモードではトークン計数は行わず、通常モードでは追加で2048トークン上限を検査する。切り替え対象は`serve`で提供するAPIであり、`init-db`や`publish`等の管理コマンドは従来どおりDBを使う。
 
 ## Difyへの接続
 
-Difyの配備は別作業で、検索API単独の実装・検証は完了している。
+検索APIの単体試験を済ませてから、採用するDify版を固定して配備と結合試験を行う。
 
 1. HTTP Requestノードから`POST /search-with-status`へ上記のJSONとBearerキーを送る。Difyから到達できる接続経路を構成する。現CLIのloopbackをコンテナ・別VMから直接使えるとは想定しない。
-2. 非200は回答生成へ進めず、エラーを扱う。200で`result_state=budget_exhausted`なら返却予算不足として扱う。
-3. `coverage_state=incomplete / unknown`なら不足を利用者へ伝え、`records`の範囲で回答する。空なら確認できる根拠なしとして扱う。
-4. 根拠本文と出典をLLMへ渡す。`score`はRRF由来で、正答確率ではない。画像参照IDだけで画像をLLMが読んだと扱わない。
+2. 非200は回答生成を止め、エラーを扱う。200の場合は最初に`retrieval_status.execution_mode`を確認する。`test`、または`records`に`metadata.test_mode: true`がある場合は接続試験の表示で終了する。
+3. 通常モードで`result_state=budget_exhausted`なら返却予算不足を表示する。`coverage_state=incomplete / unknown`なら不足を伝え、`records`の範囲で回答する。空なら確認できる根拠なしとして扱う。
+4. 根拠本文と出典をLLMへ渡す。`score`は検索順位を統合した値。画像を読む場合は`image_ref`から認証付きで取得し、画像入力として渡す。
 
-Dify標準の外部ナレッジ連携ではベースURLを登録し、Difyが`/retrieval`を呼ぶ。`metadata_condition: null`を受け付ける。主経路と標準連携から同一質問を二重検索しない。原本の`source_ref`取得にも接続キーが必要で、長期公開URL・キー入りURLは生成しない。
+Dify標準の外部ナレッジ連携には通常モードのベースURLを登録し、Difyが`/retrieval`を呼ぶ。`metadata_condition: null`を受け付ける。標準連携か状態付きAPIのいずれかを選ぶ。実際の送信JSON、409、引用表示、Bearer認証付きの原本・画像取得は採用版で確認する。
 
 ## 検証と制約
+
+2026-11-15の更新後、macOS上の専用PostgreSQL 18で全309テストが成功した。別のスモーク試験では、本番手順のAPI専用DB権限でhealth・検索・原本取得を確認した。質問Embeddingは模擬応答を使用した。Ubuntu VMでの配備とDifyの結合はそれぞれ採用環境で受け入れ確認する。
 
 実サーバーはPython 3.14.4で起動し、health・OpenAPI・接続キーなしの401・未設定ナレッジの404を確認して停止した。実資料の公開や実Embedding送信は行っていない。
 

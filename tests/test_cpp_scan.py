@@ -336,6 +336,29 @@ def test_real_existing_ingestion_is_used_and_stable(source_project, tmp_path):
         engine.dispose()
 
 
+def test_ingest_cli_reports_uninitialized_schema_and_reuses_generation(source_project, tmp_path, monkeypatch, capsys):
+    from file_scan.cli import main as file_scan_main
+
+    monkeypatch.delenv("FILE_SCAN_DATABASE_URL", raising=False)
+    settings = _ingestion_config(source_project, tmp_path)
+    config = _config(tmp_path, ingestion={"file_scan_config": "docs.yaml"})
+    adapter = FixtureCodeWiki()
+    analysis = analyze(settings, adapter=adapter)
+    generation = generate(settings, analysis["analysis_id"], adapter=adapter)
+    command = ["ingest", "--config", str(config), "--generation", generation["generation_id"]]
+
+    assert main(command) == 1
+    message = status(settings)["latest"]["ingest"]["error"]
+    assert "init-db" in message
+    assert message in capsys.readouterr().err
+    assert not (settings.artifact_root / "handoff").exists()
+
+    assert file_scan_main(["init-db", "--config", str(settings.file_scan_config)]) == 0
+    capsys.readouterr()
+    assert main(command) == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "succeeded"
+
+
 def test_handoff_requires_confirmation_for_input_root_and_document_removal(source_project, tmp_path):
     settings = _ingestion_config(source_project, tmp_path)
     adapter = FixtureCodeWiki()

@@ -35,6 +35,6 @@ image_analysis:
 
 1. `embedding.enabled: true`で`file-scan embed`を実行すると、説明チャンクもベクトル化される。
 2. 原図と説明を照合したうえで、通常の`file-search publish`に`--include-image-descriptions`を付ける。部分完了の世代を公開するときは`--allow-partial`も指定する。
-3. 検索結果には説明であることを示す`artifact_type: derived`、元画像の参照、原本またはプレビュー上の位置が付く。`artifact_type`条件で原文と説明を選べる。
+3. 検索結果には説明であることを示す`artifact_type: derived`、元画像の参照、原本またはプレビュー上の位置が付く。`artifact_type`条件で原文と説明を選べる。対応画像は`related_assets[].image_ref`へ検索と同じBearerキーでアクセスする。[出典と画像の取得](search-api.md#apiの起動と確認)
 
 [OpenAI Docsの画像入力ガイド](https://developers.openai.com/api/docs/guides/images-vision#analyze-images)・[既定モデルの仕様](https://developers.openai.com/api/docs/models/gpt-5.4-mini)

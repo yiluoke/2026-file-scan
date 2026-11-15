@@ -1,6 +1,6 @@
 # 検索API 図解ガイド
 
-確認日：2026-11-03。現行の作業ツリーをもとに、初めて読む方向けに検索APIを説明します。
+確認日：2026-11-15。現行の作業ツリーをもとに、初めて読む方向けに検索APIを説明します。
 
 [図解PDFを開く](../../output/pdf/検索API_図解ガイド.pdf)
 
@@ -17,10 +17,10 @@
 7. 識別子検索：E001のような名前を、そのまま照合
 8. 順位統合：3つの順番を、1つにまとめる
 9. 根拠づくり：近くの文脈も、一緒に返す
-10. 出典：根拠の本文から、原本の位置へ戻る
+10. 出典：根拠の位置と、原本・画像を確認する
 11. 検索結果と、資料の準備状態を分ける
 12. APIの入口：状態付きと、Dify互換を選ぶ
-13. 更新・削除：古い現行の根拠を混ぜない
+13. 更新・削除・公開取り消し
 14. テストモード：DBなしで、接続だけ試す
 15. 配置と設定：取込と検索は、並列の機能
 16. Difyと本番運用：根拠を受けて、回答へつなぐ
@@ -51,7 +51,7 @@
 - 探し方・順位・出典・不足：5〜11ページ。
 - API・更新・試験・配置：12〜16ページ。
 
-> 確認日：2026-11-03。現行コード・winnap対応版。文書・質問・順位・数値は説明用で、実データの検索結果ではありません。
+> 確認日：2026-11-15。図の文書・質問・順位・数値は、現行の仕組みを説明するための例です。
 
 根拠：[src/search/api.py](../../src/search/api.py)、[src/search/service.py](../../src/search/service.py)、[docs/implementation/search-api.md](../../docs/implementation/search-api.md)
 
@@ -70,8 +70,8 @@
 
 ### 2. 公開済みの根拠を探す
 
-- 質問を数値化し、同じ条件のベクトルと比較します。
-- 全文・識別子でも探し、候補の順位を統合します。
+- 対象チャンクがある場合に、質問を数値化します。
+- 意味・全文・識別子で探し、候補の順位を統合します。
 - 承認した公開コピーの本文・位置を取得します。
 
 ### 3. 呼出側へ返す
@@ -109,7 +109,7 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 - 公開コピーと採用先の切替を、DBへ一括登録します。
 - 公開後にembedした場合は、再publishが必要です。
 
-> 初回の業務版は既定となります。以後の既定版切替は--make-defaultを明示し、実際の採用内容を管理します。
+> 初回の業務版は既定です。既定版の切替は--make-default、公開の取り消しはunpublishを使います。
 
 根拠：[src/search/management.py](../../src/search/management.py)、[src/search/schema.py](../../src/search/schema.py)、[docs/implementation/search-api.md](../../docs/implementation/search-api.md)
 
@@ -145,29 +145,29 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 
 ## 5. 意味検索：質問と文章の、話題の近さを比べる
 
-質問を公開ベクトルと同じモデル・次元数で数値化し、言い方が違っても近い話題の文章を探します。
+質問を保存済みのベクトルと同じモデル・次元数で数値化し、言い方が違っても近い話題の文章を探します。
 
 ![意味検索：質問と文章の、話題の近さを比べる](images/search/05_semantic.png)
 
 ### 質問だけを数値化する
 
-- 例：「IDなしで登録できますか？」をOpenAIへ送ります。
+- 公開・絞り込み条件に合うチャンクがあるとき、質問をOpenAIへ送ります。
 - 採用済みプロファイルのモデル・次元数を使います。
-- 保存済みベクトルを質問側の既定値で上書きしません。
+- 対象がゼロのときは、外部APIを呼びません。
 
 ### 近さから候補を作る
 
-- pgvectorのcosine距離で正確検索します。
-- 公開対象と絞り込み条件を満たす行だけ比べます。
-- この経路は最大50候補。最終の返却件数とは別です。
+- cosine類似度が正で、設定した下限以上の行を採用。
+- 下限はsearch.semantic_min_cosine_similarity。既定は0.0です。
+- pgvectorで近い順に最大50候補を選びます。
 
 ### 外部APIの待ちを分ける
 
 - 質問Embeddingは4秒以内、自動再試行0回。
-- 外部APIを待つ間、DB接続を持ち続けません。
-- 失敗時は障害として返し、全文だけへ黙って縮退しません。
+- 外部APIを待つ間は、DB接続を返却します。
+- Embeddingの失敗は検索障害として呼出元へ返します。
 
-> 図の数値と近さは概念です。Embeddingは正しさを保証せず、実資料での検索精度は別途評価します。
+> 図は概念例です。意味検索の下限は候補選びに使い、統合後のscore_thresholdは別に適用します。
 
 根拠：[src/search/service.py](../../src/search/service.py)、[src/search/repository.py](../../src/search/repository.py)、[src/search/config.py](../../src/search/config.py)
 
@@ -196,7 +196,7 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 - 検索対象はsearch_text。返す引用はcontent_textです。
 - 語の選び方と業務用語の精度は、実質問で評価します。
 
-> 全文索引の初期設定はTokenBigram＋NormalizerAuto。質問展開・形態素解析・rerankerは今回の検索に含めません。
+> 全文・識別子の必須索引が欠落または無効な場合は、通常モードのhealthと検索が503を返します。
 
 根拠：[src/search/repository.py](../../src/search/repository.py)、[src/search/schema.py](../../src/search/schema.py)、[docs/implementation/search-api.md](../../docs/implementation/search-api.md)
 
@@ -288,17 +288,17 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 根拠：[src/search/evidence.py](../../src/search/evidence.py)、[src/search/config.py](../../src/search/config.py)、[src/search/management.py](../../src/search/management.py)
 
 
-## 10. 出典：根拠の本文から、原本の位置へ戻る
+## 10. 出典：根拠の位置と、原本・画像を確認する
 
-どの文書・版・ブロックの、どこを引用したかを付けます。原本の取得にも検索APIの接続キーが必要です。
+どの文書・版・ブロックが根拠かを示します。原本と関連画像は、検索APIの接続キーを使って取得できます。
 
-![出典：根拠の本文から、原本の位置へ戻る](images/search/10_source.png)
+![出典：根拠の位置と、原本・画像を確認する](images/search/10_source.png)
 
 ### 引用を追跡する
 
 - 文書・世代・公開コピー・原本版のIDを返します。
-- source_spansで、チャンクとブロックの文字範囲を記録。
-- 省略がある場合はexcerptedで知らせます。
+- 原文の文字範囲はsource_spansで示します。
+- 画像説明はartifact_typeがderivedとなります。
 
 ### 原本の位置を示す
 
@@ -306,13 +306,13 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 - Wordは段落や表番号、PDFはページ・領域座標です。
 - PDFの座標やセルを、引用文字だけの位置へ推測で狭めません。
 
-### 保管原本を取得する
+### 原本と関連画像を取得する
 
-- source_refの/sources/配下へBearer付きでアクセス。
-- 公開対象を再確認し、原本のサイズとSHAを検証します。
-- 画像は参照IDのみ。画像のバイト列を返すAPIは未実装です。
+- 原本はsource_ref、関連画像はimage_refで取得。
+- 採用中の公開コピーと、サイズ・SHA-256を検証します。
+- 履歴のリンクには?mode=historyが付きます。
 
-> 例のセル位置・本文は架空です。原本リンクへキーを埋め込まず、保管先を無認証の静的URLとして公開しません。
+> 図のセル位置と本文は例です。接続キーはURLに含めず、Authorizationヘッダーで送ります。
 
 根拠：[src/search/evidence.py](../../src/search/evidence.py)、[src/search/api.py](../../src/search/api.py)、[src/file_scan/storage.py](../../src/file_scan/storage.py)
 
@@ -331,7 +331,7 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 
 ### incomplete：不足あり
 
-- 更新待ち、失敗、未収集、partial、未索引等を数えます。
+- 更新待ち、失敗、未収集、partial、ベクトル不足等を数えます。
 - 例のAがヒットしても、B・Cの不足を残します。
 - 文書や機能で絞っても、予定対象の不足を消しません。
 
@@ -354,8 +354,9 @@ ingest・embedの完了だけでは検索しません。管理者が業務版と
 | --- | --- | --- |
 | POST /search-with-status | records＋retrieval_status。主経路向け | 不足があっても状態を付けた200を返せる |
 | POST /retrieval | recordsのみ。Dify External Knowledge互換 | coverage未完了・返却予算不足は409 |
-| GET /sources/{公開ID} | 承認対象の保管原本を添付ファイルとして返す | 検索と同じBearer接続キーが必要 |
-| GET /healthz | DB・検索管理版・拡張等を検査 | 通常モードの検査。公開資料やEmbeddingは別確認 |
+| GET /sources/{公開ID} | 採用中の公開コピーから保管原本を取得 | Bearer。履歴は?mode=history |
+| GET /sources/{公開ID}/images/{出現ID} | 公開コピーに含まれる画像を添付で取得 | 原本と同じ認証・業務版の条件 |
+| GET /healthz | DB・検索管理版・拡張・必須索引を検査 | 公開資料やEmbeddingの確認は別途実施 |
 | /docs・/openapi.json | 入力・出力・Bearer認証のAPI定義 | 運用時は必要な範囲だけから閲覧する |
 
 recordsの基本項目はcontent（原文）、score（統合順位の点数）、title、metadata（出典等）。正常0件、資料不足、実行障害を呼出側で区別します。
@@ -365,11 +366,11 @@ recordsの基本項目はcontent（原文）、score（統合順位の点数）�
 根拠：[src/search/api.py](../../src/search/api.py)、[src/search/models.py](../../src/search/models.py)、[src/search/errors.py](../../src/search/errors.py)
 
 
-## 13. 更新・削除：古い現行の根拠を混ぜない
+## 13. 更新・削除・公開取り消し
 
 原本と選択世代が変わると、古い公開コピーを現行検索から外します。新しい内容の確認と再公開を待ちます。
 
-![更新・削除：古い現行の根拠を混ぜない](images/search/13_freshness.png)
+![更新・削除・公開取り消し](images/search/13_freshness.png)
 
 ### 更新を取込が検出
 
@@ -383,11 +384,11 @@ recordsの基本項目はcontent（原文）、score（統合順位の点数）�
 - 返す直前にも、採用版や対象の変化を再確認します。
 - 途中で切り替わった結果は、503等で再検索を促します。
 
-### 削除と履歴を扱う
+### 削除と公開取り消し
 
-- 取込が削除・利用不能・対象外を反映すると返しません。
-- 明示した履歴検索でも、この除外条件を保ちます。
-- API要求のたびに共有フォルダを再走査する方式ではありません。
+- 削除・利用不能・対象外の資料は履歴でも除外します。
+- unpublishで指定版の採用を解除し、公開コピーを保持します。
+- 解除後は検索・原本・画像の取得から外れます。
 
 > DBへ反映されるまでの時間は取込の起動頻度等に依存します。更新検出から再公開までの運用も決めます。
 
@@ -416,7 +417,7 @@ recordsの基本項目はcontent（原文）、score（統合順位の点数）�
 
 - 両検索APIで、固定文言を1件返します。
 - metadata.test_mode=true。状態はexecution_mode=test。
-- healthもDBを使わず、原本取得は404になります。
+- healthもDBを使わず、原本・画像の取得は404です。
 
 > 接続試験であり、検索精度・資料の公開準備・実Embeddingの検査ではありません。通常モードへ戻して受入確認します。
 
@@ -425,7 +426,7 @@ recordsの基本項目はcontent（原文）、score（統合順位の点数）�
 
 ## 15. 配置と設定：取込と検索は、並列の機能
 
-ソースはsrc/file_scanとsrc/searchに分離し、原本・DB・ナレッジ等の接続条件は現在の共通YAMLから読みます。
+本番例のルートは/opt/file-scan/です。ソースは直下のsrc/、共通設定と環境変数ファイルはルート直下に置きます。
 
 ![配置と設定：取込と検索は、並列の機能](images/search/15_configuration.png)
 
@@ -437,17 +438,17 @@ recordsの基本項目はcontent（原文）、score（統合順位の点数）�
 
 ### 共有するデータと設定
 
-- 共通YAMLにDB・保管先・ナレッジ・Embedding等。
+- config.local.yamlでナレッジ・保管先等を共有。
 - DBの物理配置はwinnap。取込v3と検索v1を別管理。
-- 3ファイルへの設定分割は、まだ実装していません。
+- 本番例は原本の保存領域を/var/lib/file-scan/へ置きます。
 
 ### 機能ごとに制御する
 
-- 取込は収集元・変換・分割・バッチ設定を使います。
-- 検索は接続キー・ポート・履歴許可などを使います。
-- 本番例は管理用とAPI用のDB接続ロールを分けます。
+- .envは取込・公開管理用、.env.searchは常駐API用。
+- 接続先DBは同じで、DBロールを分けます。
+- 検索のポートと履歴許可は起動コマンドで指定。
 
-> 検索の期限・候補数・予算は現在コードの既定値です。search.test_mode以外の任意YAML項目で変更できるとは扱いません。
+> 共通YAMLのsearch配下でテストモードと意味検索の下限を設定します。期限・候補数・返却予算はコードの既定値です。
 
 根拠：[src/search/config.py](../../src/search/config.py)、[src/file_scan/namespace.py](../../src/file_scan/namespace.py)、[docs/implementation/search-api-production.md](../../docs/implementation/search-api-production.md)
 
@@ -473,8 +474,8 @@ API単独で検索を実装し、DifyからHTTPで呼べます。本番ではHTT
 ### 適用範囲を守る
 
 - 文書ACL・利用者別SSOは保留。共有可能な範囲で利用。
-- 初版で公開・返却する根拠は、原本の抽出結果です。
-- 図の意味理解、reranker、HA等は実装済みと扱いません。
+- 画像説明を公開する場合は、原図と照合して承認します。
+- Difyでの画像表示や回答への入力は、呼出側で構成します。
 
 > 同時検索4件、全体10秒が1プロセスの既定。healthの200だけで、実資料の準備・精度・本番受入を完了としません。
 
@@ -496,6 +497,6 @@ API単独で検索を実装し、DifyからHTTPで呼べます。本番ではHTT
 
 設計書02・03・04には将来案も含まれます。本資料の例は説明用で、実OpenAI API・Dify本体・検索品質・Ubuntu本番環境の検証結果を示すものではありません。
 
-> 確認対象：2026-11-03の作業ツリー。PDF・Markdown・図の素材は同じ定義から生成します。
+> 確認対象は2026-11-15の作業ツリーです。PDF、Markdown、図は同じ定義から生成します。
 
 根拠：[docs/design/02-search-platform.md](../../docs/design/02-search-platform.md)、[docs/implementation/search-api.md](../../docs/implementation/search-api.md)、[src/search/](../../src/search/)

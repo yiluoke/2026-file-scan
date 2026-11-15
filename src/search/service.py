@@ -153,36 +153,35 @@ class RetrievalService:
                     logger.warning("search_event_write_failed")
 
     async def _search(self, request, request_id):
+        filters = request.filters()
+        profile = None
         async with self.engine.connect() as c:
+            c = await c.execution_options(
+                isolation_level="REPEATABLE READ", postgresql_readonly=True
+            )
             await c.execute(
                 text("SELECT set_config('statement_timeout', :timeout, true)"),
                 {"timeout": str(self.config.statement_timeout_ms)},
             )
             before = await self.scope(c, request)
-            profile = (
-                (
-                    await c.execute(
-                        select(core["embedding_profiles"]).where(
-                            core["embedding_profiles"].c.embedding_profile_id
-                            == before["embedding_profile_id"]
+            if not await s.indexes_ready(c):
+                raise SearchError("SEARCH_UNAVAILABLE")
+            _, eligible_before = repo.coverage(await repo.expected(c, before), before)
+            if await repo.has_candidates(c, eligible_before, filters):
+                profile = (
+                    (
+                        await c.execute(
+                            select(core["embedding_profiles"]).where(
+                                core["embedding_profiles"].c.embedding_profile_id
+                                == before["embedding_profile_id"]
+                            )
                         )
                     )
+                    .mappings()
+                    .one()
                 )
-                .mappings()
-                .one()
-            )
-            planned = (
-                await c.execute(
-                    select(func.count())
-                    .select_from(s.bindings)
-                    .where(
-                        s.bindings.c.release_id == before["release_id"],
-                        s.bindings.c.publication_id.is_not(None),
-                    )
-                )
-            ).scalar_one()
         vector = None
-        if planned:
+        if profile is not None:
             async with asyncio.timeout(self.config.embedding_timeout):
                 vector = validate_vector(
                     await self.embedder(request.query, dict(profile)), profile["dimensions"]
@@ -197,11 +196,13 @@ class RetrievalService:
                     {"timeout": str(self.config.statement_timeout_ms)},
                 )
                 scope = await self.scope(c, request)
-                if (
-                    scope["revision"] != before["revision"]
-                    or scope["embedding_profile_id"] != profile["embedding_profile_id"]
+                if any(
+                    scope[key] != before[key]
+                    for key in ("revision", "release_id", "embedding_profile_id")
                 ):
                     raise SearchError("SEARCH_UNAVAILABLE", retryable=True)
+                if not await s.indexes_ready(c):
+                    raise SearchError("SEARCH_UNAVAILABLE")
                 counts, eligible = repo.coverage(await repo.expected(c, scope), scope)
                 if eligible:
                     counts["index_pending_documents"] = (
@@ -220,22 +221,25 @@ class RetrievalService:
                     else ("incomplete" if any(counts.values()) else "complete")
                 )
                 ranked, rows = [], {}
-                if eligible:
-                    if vector is None:
+                if vector is None:
+                    if await repo.has_candidates(c, eligible, filters):
                         raise SearchError("SEARCH_UNAVAILABLE", retryable=True)
+                elif eligible:
                     ranked = fuse(
                         await repo.lanes(
                             c,
                             request.query,
                             vector,
                             eligible,
-                            request.filters(),
+                            filters,
                             self.config.candidate_limit,
+                            semantic_minimum=self.config.semantic_min_cosine_similarity,
                         )
                     )
                     rows = await repo.hydrate(c, [key for key, _ in ranked])
                 records, reasons, result_state = await assemble(
-                    c, ranked, rows, scope["release_id"], request.retrieval_setting, self.config
+                    c, ranked, rows, scope["release_id"], request.retrieval_setting, self.config,
+                    search_mode=scope["search_mode"],
                 )
                 status = {
                     "snapshot_id": str(uuid4()),
@@ -246,7 +250,7 @@ class RetrievalService:
                     "policy_revision": None,
                     "access_control": "not_enforced",
                     "execution_mode": "local_prototype",
-                    "embedding_profile_id": profile["embedding_profile_id"],
+                    "embedding_profile_id": scope["embedding_profile_id"],
                     "search_config_version": self.config.config_version,
                     "coverage_scope": "configured_knowledge_release",
                     "coverage_state": state,

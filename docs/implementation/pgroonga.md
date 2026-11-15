@@ -1,6 +1,6 @@
 # PGroongaの導入・日本語検索・運用手順
 
-更新日：2026-11-03。初回のMac導入日は2026-10-25。現在は検索APIの全文経路・3経路の順位統合・公開管理を実装済み。本書は、現行コード・固定したビルドソース・公式資料と照合した手順である。
+更新日：2026-11-15。初回のMac導入日は2026-10-25。検索APIの全文経路・3経路の順位統合・公開管理を実装している。本書は現行コード・固定したビルドソース・公式資料と照合した手順である。
 
 PGroongaを使う準備は、**サーバーのライブラリ導入 → 対象DBで拡張を有効化 → 検索表・索引の作成 → 採用資料の公開**の順で行う。`pip install`や`CREATE EXTENSION`だけで全段階が完了するわけではない。
 
@@ -53,7 +53,39 @@ PGroongaを使う準備は、**サーバーのライブラリ導入 → 対象DB
 
 PostgreSQL 18を導入したUbuntu VM内で、管理者が行う。OS・Python・pgvector 0.8.6は[VM構築手順](ubuntu-26.04-vm.md)に従う。
 
-2026-11-03に確認した[公式Ubuntu対応一覧](https://pgroonga.github.io/install/ubuntu.html)は22.04／24.04で、26.04は掲載されていない。そこにあるUbuntu標準PostgreSQL向けの14／16用パッケージや、別Ubuntu版向けのリポジトリを、26.04＋PostgreSQL 18へ流用しない。本書では[公式のMesonによるソース導入](https://pgroonga.github.io/install/source.html)を使う。
+Ubuntu 26.04（`resolute`）はPGroonga 4.0.8からサポートされている。Ubuntu標準のPostgreSQL 18には公式Groonga APTの`postgresql-18-pgroonga`、PGDGのPostgreSQL 18には`postgresql-18-pgdg-pgroonga`を使う。導入元と採用版を選び、APTとソースビルドのどちらか一方を使う。[公式Ubuntu手順](https://pgroonga.github.io/install/ubuntu.html)、[4.0.8のリリースノート](https://pgroonga.github.io/news/#408-2026-08-03)
+
+### APTで導入する場合
+
+以下はUbuntu標準のPostgreSQL 18と公式Groonga APTを使う例。組織で利用可能なリポジトリであることを確認し、OSのコードネームが`resolute`であることを確認してから登録する。
+
+```sh
+sudo apt install -y ca-certificates curl lsb-release
+(
+  set -eu
+  test "$(lsb_release -sc)" = resolute
+  apt_setup_dir="$(mktemp -d)"
+  trap 'rm -rf -- "$apt_setup_dir"' EXIT
+  chmod 0755 "$apt_setup_dir"
+  cd "$apt_setup_dir"
+  curl -fLO https://packages.groonga.org/ubuntu/groonga-apt-source-latest-resolute.deb
+  sudo apt install ./groonga-apt-source-latest-resolute.deb
+)
+sudo apt update
+apt-cache policy postgresql-18 postgresql-18-pgroonga
+apt-cache madison postgresql-18-pgroonga
+```
+
+検証基準はPGroonga拡張4.1.0。`apt-cache madison`で承認済みのパッケージ版を確認し、次の`<パッケージ版>`にはリポジトリが表示した完全な版を指定する。目的の版を入手できない場合はソースビルドか、別の版での検証を選ぶ。
+
+```sh
+sudo apt install 'postgresql-18-pgroonga=<パッケージ版>'
+dpkg-query -W 'postgresql-18-pgroonga' 'libgroonga*'
+```
+
+次節のDB有効化ではPostgreSQLが公開している拡張版を照合する。APTパッケージ版とSQLの拡張版は別の値である。
+
+### 固定ソースからビルドする場合
 
 PGroonga 4.1.0の[ビルド定義](https://github.com/pgroonga/pgroonga/blob/4.1.0/meson.build)はGroonga 14.1.0以上を要求する。Ubuntuの[libgroonga-dev](https://packages.ubuntu.com/resolute/libgroonga-dev)は確認時16.0.0+dfsg-1。Macの16.1.4とは異なるので、実際の候補版と採用版を記録する。
 
@@ -94,7 +126,7 @@ test -f /usr/share/postgresql/18/extension/pgroonga.control
 
 MessagePackはこのUbuntu例では自動検出とし、日本語全文検索の必須依存にしない。xxHashはOSの開発パッケージを使い、Meson wrapの暗黙取得を禁止する。実際のPostgreSQL配置が異なる場合は、最後の2パスも`pg_config --pkglibdir`・`--sharedir`に合わせる。Ubuntuの標準配置では、Mac用のcontrol書換え・拡張検索パス変更は行わない。
 
-このUbuntu用手順は公式仕様と固定ソースに照合した構築例で、Ubuntu実機での導入確認は別途必要となる。
+APTとソースビルドのいずれを選んでも、採用構成でDB有効化・日本語検索・既存DBの更新手順をUbuntu実機で確認する。
 
 ## 4. DBごとに拡張を有効化する
 
@@ -106,6 +138,8 @@ sudo -u postgres psql -d file_scan -v ON_ERROR_STOP=1
 ```
 
 ```sql
+SELECT name, version FROM pg_available_extension_versions
+WHERE (name, version) IN (('vector', '0.8.6'), ('pgroonga', '4.1.0'));
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public VERSION '0.8.6';
 CREATE EXTENSION IF NOT EXISTS pgroonga WITH SCHEMA public VERSION '4.1.0';
 SELECT e.extname, e.extversion, n.nspname AS extension_schema
@@ -120,13 +154,13 @@ WHERE e.extname IN ('vector', 'pgroonga');
 \quit
 ```
 
-`file_scan_test`は検証専用DBを用意した場合だけ接続する。`IF NOT EXISTS`は、既存拡張の版・配置を更新しない。結果を確認し、既存PGroongaを別スキーマへ置いていた場合は、その場で削除・移動せず対応を判断する。[CREATE EXTENSIONの仕様](https://www.postgresql.org/docs/18/sql-createextension.html)
+`pg_available_extension_versions`で採用版を確認してから有効化する。`file_scan_test`は検証専用DBを用意した場合だけ接続する。`IF NOT EXISTS`は、既存拡張の版・配置を更新しない。結果を確認し、既存PGroongaを別スキーマへ置いていた場合は、その場で削除・移動せず対応を判断する。[CREATE EXTENSIONの仕様](https://www.postgresql.org/docs/18/sql-createextension.html)
 
 [scripts/init-pgroonga.sql](../../scripts/init-pgroonga.sql)も、対象DBへPGroongaを有効化するだけの補助SQLである。アプリの表や公開対象は作らない。拡張の関数・演算子は新規構成では`public`、取込・検索の表は`winnap`へ配置する。旧`pgroonga.*`互換APIには依存しない。
 
 ## 5. 検索テーブル・全文索引と公開資料を準備する
 
-以下はアプリのルートで、設定済みの管理用DB接続を読み込んで実行する。APIの実行専用ロールではなく、表・索引を管理するロールを使う。本番の認証情報配置・API用の権限は[本番構築手順](search-api-production.md)に従う。
+以下は開発チェックアウトのルートで、設定済みの管理用DB接続を使う例。本番では`file_scan_admin`でコマンドを起動する。表・索引の管理はDB所有ロールを使う。[本番の初期化手順](search-api-production.md#5-テーブル初期化と実資料の公開)
 
 ```sh
 source .venv/bin/activate
@@ -152,7 +186,7 @@ JOIN pg_am am ON am.oid = index_class.relam
 WHERE i.indexrelid = to_regclass('winnap.ix_search_chunks_fulltext');
 ```
 
-期待値は取込`3`・検索`1`、索引1行で`indisvalid=true`・`amname=pgroonga`。定義には`search_text`、`TokenBigram`、`NormalizerAuto`が含まれる。検索版1があっても索引の欠落・定義不一致を`init-db`が自動修復するとは限らないため、0行や不一致を無視しない。
+期待値は取込`3`・検索`1`、索引1行で`indisvalid=true`・`amname=pgroonga`。定義には`search_text`、`TokenBigram`、`NormalizerAuto`が含まれる。検索版1があっても、必須索引が欠落または使用不能なら`init-db`は索引名を示して停止する。通常モードの`/healthz`と検索も503を返す。別途、DB管理者が実消失・無効状態・定義の誤りを調査し、正しいDDLで復旧する。
 
 索引作成後、`ingest → embed → create-release → publish`で実際の採用原本・世代を登録する。[APIの公開管理手順](search-api.md)を参照。取込下書きや仮の承認記録を直接SQLで公開しない。通常検索には`search.test_mode: false`、有効な質問Embedding設定・キーが必要である。テストモードの固定応答はPGroongaの動作確認にはならない。
 

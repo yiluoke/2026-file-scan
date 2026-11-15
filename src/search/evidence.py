@@ -11,6 +11,9 @@ from search import schema as s
 from file_scan.tokens import count_tokens, fit_prefix
 
 
+IMAGE_ASSET_ROLES = ("original_image", "region_image")
+
+
 def location(block, lo, hi, source_path):
     result = []
     for source in block["source_locations"]:
@@ -27,7 +30,7 @@ def location(block, lo, hi, source_path):
     return result
 
 
-def record(row, score, blocks, release_id, token_limit, *, role="hit", support=None):
+def record(row, score, blocks, release_id, token_limit, *, search_mode="current", role="hit", support=None):
     body = row["content_text"]
     excerpt = fit_prefix(body, token_limit)
     while excerpt and count_tokens(excerpt) > token_limit:
@@ -41,6 +44,8 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
     ):
         return None, 0
     spans, locations, block_ids, assets = [], [], [], []
+    source_path = "/sources/" + row["publication_id"]
+    mode_query = "?mode=history" if search_mode == "history" else ""
     for mapping in row["mappings"]:
         start, end = mapping["chunk_char_start"], min(stop, mapping["chunk_char_end"])
         if end <= start:
@@ -64,13 +69,13 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
             if loc not in locations:
                 locations.append(loc)
         for asset in block["assets"]:
-            assets.append(
-                {
-                    "asset_id": asset["asset_id"],
-                    "occurrence_id": asset["occurrence_id"],
-                    "asset_role": asset["asset_role"],
-                }
-            )
+            related = {k: asset[k] for k in ("asset_id", "occurrence_id", "asset_role")}
+            if related["asset_role"] in IMAGE_ASSET_ROLES:
+                related["image_ref"] = (
+                    f"{source_path}/images/{related['occurrence_id']}{mode_query}"
+                )
+            if related not in assets:
+                assets.append(related)
     if not spans:
         return None, 0
     origin = row["mappings"][0].get("artifact_type", "source")
@@ -95,7 +100,7 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
         "excerpted": stop < len(body),
         "related_evidence_ids": [],
         "related_assets": assets[:10],
-        "source_ref": "/sources/" + row["publication_id"],
+        "source_ref": source_path + mode_query,
     }
     if origin == "derived":
         metadata["description_spans"] = spans
@@ -111,7 +116,7 @@ def record(row, score, blocks, release_id, token_limit, *, role="hit", support=N
     }, count_tokens(excerpt)
 
 
-async def assemble(connection, ranked, rows, release_id, setting, config):
+async def assemble(connection, ranked, rows, release_id, setting, config, *, search_mode="current"):
     publication_ids = list({key[0] for key, _ in ranked})
     if not publication_ids:
         return [], [], "no_match"
@@ -146,7 +151,8 @@ async def assemble(connection, ranked, rows, release_id, setting, config):
             pending.append((key, score))
             continue
         item, used = record(
-            row, score, source_blocks, release_id, min(config.record_token_budget, remaining)
+            row, score, source_blocks, release_id, min(config.record_token_budget, remaining),
+            search_mode=search_mode,
         )
         if not item:
             limits.add("token_budget")
@@ -305,6 +311,7 @@ async def assemble(connection, ranked, rows, release_id, setting, config):
                 source_blocks,
                 release_id,
                 min(config.record_token_budget, remaining),
+                search_mode=search_mode,
                 role="context",
                 support=hit["metadata"]["evidence_id"],
             )
@@ -323,7 +330,8 @@ async def assemble(connection, ranked, rows, release_id, setting, config):
             limits.add("document_cap")
             continue
         item, used = record(
-            row, score, source_blocks, release_id, min(config.record_token_budget, remaining)
+            row, score, source_blocks, release_id, min(config.record_token_budget, remaining),
+            search_mode=search_mode,
         )
         if item:
             records.append(item)

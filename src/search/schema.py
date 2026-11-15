@@ -159,6 +159,44 @@ events = Table(
 versions = Table("search_schema_migrations", metadata, Column("version", Integer, primary_key=True))
 
 
+SEARCH_INDEXES = {
+    "ix_search_chunks_fulltext": ("pgroonga", "search_text"),
+    "ix_search_chunks_identifiers": ("gin", "identifiers"),
+    "ix_search_chunks_features": ("gin", "feature_ids"),
+}
+SEARCH_INDEX_STATUS = text("""
+    SELECT name.relname, method.amname, attribute.attname
+    FROM pg_catalog.pg_index AS idx
+    JOIN pg_catalog.pg_class AS name ON name.oid = idx.indexrelid
+    JOIN pg_catalog.pg_am AS method ON method.oid = name.relam
+    JOIN pg_catalog.pg_class AS relation ON relation.oid = idx.indrelid
+    JOIN pg_catalog.pg_namespace AS namespace ON namespace.oid = relation.relnamespace
+    JOIN pg_catalog.pg_attribute AS attribute
+      ON attribute.attrelid = relation.oid AND attribute.attnum = idx.indkey[0]
+    WHERE namespace.nspname = :schema_name AND relation.relname = 'search_chunks'
+      AND idx.indisvalid AND idx.indisready AND idx.indislive
+      AND idx.indnatts = 1 AND idx.indpred IS NULL
+""")
+
+
+def missing_search_indexes(rows):
+    usable = {name: (method, column) for name, method, column in rows}
+    return tuple(name for name, definition in SEARCH_INDEXES.items() if usable.get(name) != definition)
+
+
+class SearchIndexError(RuntimeError):
+    def __init__(self, missing_indexes):
+        self.missing_indexes = missing_indexes
+        super().__init__("必要な検索索引が利用できません: " + ", ".join(missing_indexes))
+
+
+async def indexes_ready(connection):
+    rows = await connection.execute(
+        SEARCH_INDEX_STATUS, {"schema_name": database_schema(connection.sync_connection)}
+    )
+    return not missing_search_indexes(rows)
+
+
 def migrate(engine):
     """既存v3へ検索専用表だけを追加。未管理・未知版の検索表は修復しない。"""
     require_schema(engine)
@@ -181,6 +219,9 @@ def migrate(engine):
                 or managed - existing
             ):
                 raise RuntimeError("検索スキーマと適用版が一致しません")
+            rows = c.execute(SEARCH_INDEX_STATUS, {"schema_name": database_schema(c)})
+            if missing := missing_search_indexes(rows):
+                raise SearchIndexError(missing)
             return
         if managed & existing:
             raise RuntimeError("未管理の検索テーブルがあります")

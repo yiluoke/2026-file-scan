@@ -27,7 +27,7 @@
 			<rect x="522.5933333333332" y="14" width="235.29666666666662" height="116" rx="8" ry="8" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(91%,95%,98%); fill-rule: evenodd;"/>
 			<rect x="522.5933333333332" y="126" width="235.29666666666662" height="4" style="stroke: none; stroke-linecap: butt; stroke-width: 1; fill: rgb(3%,49%,54%); fill-rule: evenodd;"/>
 			<text x="535.5933333333332" y="105" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 12px;fill: rgb(3%,49%,54%); stroke:none;" transform="translate(0,210) scale(1,-1)">意味が近い候補</text>
-			<text x="535.5933333333332" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">pgvectorのcosine距離</text>
+			<text x="535.5933333333332" y="83" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,166) scale(1,-1)">cosine類似度が正で下限以上</text>
 			<text x="535.5933333333332" y="66" style="font-family: 'Arial Unicode MS', 'Hiragino Kaku Gothic ProN', sans-serif; font-size: 10.5px;fill: rgb(9%,19%,30%); stroke:none;" transform="translate(0,132) scale(1,-1)">この経路は最大50件</text>
 		</g>
 	</g>
