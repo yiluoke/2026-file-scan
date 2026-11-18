@@ -1,6 +1,6 @@
 # 検索APIの本番環境構築手順
 
-更新日：2026-11-15。対象はWindowsホスト上のUbuntu 26.04 VM。`src/search/`を常駐させ、限定した社内クライアント・Difyから利用するための手順。Ubuntu VMでの配備と受入結果は別途記録する。
+2026-11-18更新。対象はWindowsホスト上のUbuntu 26.04 VM。`src/search/`を常駐させ、限定した社内クライアント・Difyから利用するための手順。Ubuntu VMでの配備と受入結果は別途記録する。
 
 ## 1. 適用範囲と構成
 
@@ -30,6 +30,7 @@
 /opt/file-scan/
 ├── pyproject.toml
 ├── config.example.yaml
+├── .env.search.example     # 常駐API用のひな形
 ├── config.local.yaml       # 取込・検索の共通設定（Git管理外）
 ├── .env                    # 取込・公開管理用の環境変数（Git管理外）
 ├── .env.search             # 常駐API用の環境変数（Git管理外）
@@ -76,6 +77,17 @@ DB名・接続先・データ配置パスは導入先に合わせて変更する
 Ubuntu 26.04標準のPostgreSQL 18には、公式Groonga APTで`postgresql-18-pgroonga`が案内されている。採用するパッケージ版とSQLの拡張版を確認し、APTで採用版を用意できない場合は固定ソースからビルドする。Macの`artifacts/pgroonga-runtime/`や`.venv`はUbuntuへコピーしない。[PGroonga導入手順](pgroonga.md#3-ubuntu-2604-vmへのサーバー側導入)、[PGroonga公式Ubuntu手順](https://pgroonga.github.io/install/ubuntu.html)
 
 現在のlockは検証用依存も含む。`check_python_environment.py`はPythonのパッチ版まで基準と照合するため、Ubuntuの保守更新で差が出た場合は、基準と試験結果を更新する。照合エラーを無視して完了と扱わない。
+
+### FastAPIとUvicornの導入確認
+
+[VM手順3節](ubuntu-26.04-vm.md#3-ubuntu標準python-314と固定依存)で、固定依存からFastAPIとUvicornを仮想環境へ導入し、プロジェクトを`.[dev,search]`付きでインストールして`file-search`コマンドを作成する。現行lockの固定版はFastAPI `0.118.0`、Uvicorn `0.38.0`。VM上で導入結果を確認する。
+
+```sh
+/opt/file-scan/.venv/bin/python -m pip show fastapi uvicorn
+/opt/file-scan/.venv/bin/file-search serve --help
+```
+
+### 本番DBの作成と拡張の有効化
 
 DB管理者が接続し、新規DBの場合だけロール・DBを作る。既存環境ではDB・所有ロールを再作成せず、拡張の有効化と版を確認する。
 
@@ -125,11 +137,12 @@ cd /opt/file-scan
 if [ ! -e config.local.yaml ]; then
   sudo install -o root -g file-scan -m 0640 config.example.yaml config.local.yaml
 fi
-for env_file in .env .env.search; do
-  if [ ! -e "$env_file" ]; then
-    sudo install -o root -g root -m 0600 /dev/null "$env_file"
-  fi
-done
+if [ ! -e .env ]; then
+  sudo install -o root -g root -m 0600 /dev/null .env
+fi
+if [ ! -e .env.search ]; then
+  sudo install -o root -g root -m 0600 .env.search.example .env.search
+fi
 sudoedit /opt/file-scan/config.local.yaml /opt/file-scan/.env /opt/file-scan/.env.search
 ```
 
@@ -174,14 +187,16 @@ TIKTOKEN_CACHE_DIR=/var/cache/file-scan/tiktoken
 HF_HOME=/var/cache/file-scan/huggingface
 ```
 
-`.env.search`の形式。`SEARCH_DB_PASSWORD`と接続キーは、それぞれ別の値を用意する。OpenAIへの接続には実際の有効なキーが必要。
+`.env.search`は[ひな形](../../.env.search.example)から作成し、次の値を設定する。
 
-```dotenv
-FILE_SCAN_DATABASE_URL=postgresql+psycopg://file_scan_search:SEARCH_DB_PASSWORD@127.0.0.1:5432/file_scan
-FILE_SCAN_SEARCH_API_KEY=SEARCH_CONNECTION_KEY
-OPENAI_API_KEY=OPENAI_KEY
-TIKTOKEN_CACHE_DIR=/var/cache/file-scan/tiktoken
-```
+| 変数 | 用途 |
+| --- | --- |
+| `FILE_SCAN_DATABASE_URL` | 検索専用ロール`file_scan_search`の接続URL。DBホスト・ポート・DB名は取込用`.env`と揃え、パスワードのURL予約文字をパーセントエンコードする |
+| `FILE_SCAN_SEARCH_API_KEY` | Dify等の呼出元がBearerで送る接続キー。DBパスワードやOpenAIキーと分ける |
+| `OPENAI_API_KEY` | 通常モードの質問Embedding用。YAMLで`embedding.api_key_env`を変更した場合は対応する変数名を使う |
+| `TIKTOKEN_CACHE_DIR` | 事前配置したトークナイザー辞書のディレクトリ。本番例は`/var/cache/file-scan/tiktoken` |
+
+接続試験用のテストモードでは`FILE_SCAN_SEARCH_API_KEY`だけで起動できる。本番の常駐サービスは通常モードで起動する。
 
 `EnvironmentFile`には単純な`名前=値`を記載する。手動の管理操作とサービスの起動にはsystemdが読み込み、`file-scan`のプロセスへ環境変数を渡す。組織で秘密管理基盤を使う場合は、その基盤からプロセスへ渡す仕組みを構成する。[systemdの実行環境仕様](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)
 
@@ -200,6 +215,12 @@ OpenAIへの接続経路・組織のCA設定も確認する。辞書不足によ
 
 ## 5. テーブル初期化と実資料の公開
 
+### 検索テーブルの定義と作成
+
+検索専用テーブルの実装は`src/search/schema.py`にある。8表のカラム・制約・索引はDBテーブル設計12節を参照する。配布SQLの`sql/postgresql/schema-v3.sql`で作成できるのは取込v3の20表で、検索v1の8表と必須索引3件は`file-search init-db`で作成する。[検索スキーマの実装](../../src/search/schema.py)、[検索専用テーブル設計](../design/04-database-tables.md#12-ローカル試作で実装した検索専用スキーマv1)
+
+3節で対象DBの`vector`と`pgroonga`を有効にしてから、`file-scan init-db`、`file-search init-db`の順に実行する。両方とも`.env`のDB所有ロールで同じDBに接続する。検索APIの常駐用DBロールの権限は6節で設定する。
+
 操作前に、管理者のBashセッションで`file_scan_admin`を定義する。systemdがroot所有の`.env`を環境変数として読み、指定したコマンドを`file-scan`ユーザーで実行する。[systemd-runの仕様](https://www.freedesktop.org/software/systemd/man/latest/systemd-run.html)
 
 ```sh
@@ -214,7 +235,7 @@ file_scan_admin /opt/file-scan/.venv/bin/file-scan init-db --config /opt/file-sc
 file_scan_admin /opt/file-scan/.venv/bin/file-search init-db --config /opt/file-scan/config.local.yaml
 ```
 
-期待値は`winnap.schema_migrations`が3、`winnap.search_schema_migrations`が1。取込20表と検索8表を同じ`winnap`に管理する。既存の`public`配置が残る環境では、新規初期化を強行せず[スキーマ移行手順](winnap-schema.md)を実施する。初期化はAPI用のDBロールでは行わない。
+成功時の`file-search init-db`は`{"search_schema_version": 1, "ingestion_schema_version": 3}`を返す。取込・検索の表は同じ`winnap`スキーマに配置する。既存の`public`配置が残る環境では、先に[スキーマ移行手順](winnap-schema.md)を実施する。
 
 DB管理者が`file_scan`へ接続し、スキーマ版と必須索引3件を確認する。全文索引はPGroonga、識別子・機能ラベルはGINを使い、各行の`indisvalid`・`indisready`・`indislive`が真になる。
 
@@ -231,6 +252,8 @@ WHERE indrelid = 'winnap.search_chunks'::regclass
     to_regclass('winnap.ix_search_chunks_features')
   );
 ```
+
+### 実資料の公開
 
 SMBを取込元にする場合は、手動取込の前にも次の3つのコマンドが成功することを確認する。パスは設定した共有ルートに合わせる。[Ubuntu VMの共有マウント手順](ubuntu-26.04-vm.md#6-windowsnasの共有フォルダを収集する場合)
 
@@ -303,6 +326,21 @@ GRANT INSERT ON winnap.search_events TO file_scan_search;
 
 ## 7. systemdで常駐化
 
+### FastAPIの起動と設定箇所
+
+`file-search serve`がFastAPIアプリを組み立て、内部でUvicornを起動する。FastAPI専用の設定ファイルは不要。待受やアプリの動作は下表の箇所で設定する。HTTPルートと認証処理はアプリに定義されている。[起動CLI](../../src/search/cli.py)、[FastAPIアプリ](../../src/search/api.py)
+
+| 設定する内容 | 設定箇所 |
+| --- | --- |
+| 待受IP | 起動CLIで`127.0.0.1`に固定。別ホストのDifyは8節のNginxのHTTPS URLへ接続する |
+| 待受ポート | systemdの`ExecStart`で`--port 8000`を指定。変更時はNginxの`proxy_pass`とVM内の確認URLも合わせる |
+| DB接続・Bearerキー・OpenAIキー・辞書 | systemdの`EnvironmentFile=/opt/file-scan/.env.search` |
+| ナレッジ・保管先・通常／テストモード・意味検索の下限 | `--config /opt/file-scan/config.local.yaml`。本番サービスでは`search.test_mode: false` |
+| 履歴検索の許可 | 必要な環境で`ExecStart`に`--allow-history`を追加。既定は無効 |
+| HTTPS・証明書・外部からの接続元制限 | 8節のNginx設定 |
+
+### サービスの登録と起動
+
 `/etc/systemd/system/file-search.service`を作成する。`18/main`以外のDBクラスタでは依存先を置き換える。サービスは現在のCLIと同じく1プロセス・loopback待受で起動する。
 
 ```ini
@@ -350,9 +388,10 @@ sudo systemctl status file-search.service
 sudo journalctl -u file-search.service -n 100 --no-pager
 ss -ltn | grep '127.0.0.1:8000'
 curl --fail --silent --show-error http://127.0.0.1:8000/healthz
+curl --fail --silent --show-error --output /dev/null http://127.0.0.1:8000/openapi.json
 ```
 
-healthの`execution_mode`が`local_prototype`で、vectorとPGroongaの版が返ることを確認する。必須索引が欠落、無効、あるいは列や方式が異なる場合は、通常モードのhealthと検索が503を返す。公開資料、ベクトルの準備、実Embeddingは9節の実検索で確認する。`--allow-history`を使う場合は接続元すべてへの適用範囲と過去版の取扱いを確認する。
+VM内の`/openapi.json`が200を返せば、FastAPIがAPI定義を配信している。healthの`execution_mode`が`local_prototype`で、vectorとPGroongaの版が返ることも確認する。必須索引が欠落、無効、あるいは列や方式が異なる場合は、通常モードのhealthと検索が503を返す。公開資料、ベクトルの準備、実Embeddingは9節の実検索で確認する。`--allow-history`を使う場合は接続元すべてへの適用範囲と過去版の取扱いを確認する。
 
 ## 8. NginxでHTTPS接続を受ける
 
@@ -369,7 +408,10 @@ sudo install -d -o root -g root -m 0700 /etc/nginx/tls
 
 ```nginx
 log_format file_search '$remote_addr $time_iso8601 "$request_method $uri" '
-                       '$status $request_time $upstream_response_time';
+                       'status=$status gateway_request_id=$request_id '
+                       'request_id=$upstream_http_x_request_id upstream_status=$upstream_status '
+                       'connect_s=$upstream_connect_time header_s=$upstream_header_time '
+                       'upstream_s=$upstream_response_time total_s=$request_time';
 
 server {
     listen 443 ssl;
@@ -384,18 +426,27 @@ server {
     client_max_body_size 32k;
     access_log /var/log/nginx/file-search-access.log file_search;
     error_log /var/log/nginx/file-search-error.log warn;
+    add_header X-Gateway-Request-ID $request_id always;
 
     proxy_http_version 1.1;
     proxy_set_header Connection "";
     proxy_set_header Host $host;
     proxy_set_header Authorization $http_authorization;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Gateway-Request-ID $request_id;
     proxy_connect_timeout 2s;
     proxy_send_timeout 15s;
     proxy_read_timeout 15s;
     proxy_next_upstream off;
     proxy_cache off;
     proxy_buffering off;
+    proxy_intercept_errors off;
+    error_page 504 = @gateway_timeout;
+
+    location @gateway_timeout {
+        default_type application/json;
+        return 504 '{"code":"GATEWAY_TIMEOUT","error_msg":"Nginxが検索APIの応答を制限時間内に取得できませんでした。","gateway_request_id":"$request_id"}';
+    }
 
     location = /search-with-status {
         proxy_pass http://127.0.0.1:8000;
@@ -416,6 +467,8 @@ server {
 APIパスを変更せず転送し、`/docs`・`/openapi.json`・`/healthz`はVM内から確認する。原本と画像は認証付き`/sources/`から返す。参照URLの履歴指定`?mode=history`もそのまま転送する。アクセスログには質問本文・Authorization・クエリ文字列を含めず、ログの保存期間を設定する。質問はJSON、キーはBearerヘッダーで送る。
 
 APIの検索期限は全体10秒なので、プロキシはそれより長く待つ。プロキシでPOSTを自動再試行したり、古い検索結果をキャッシュして返したりしない。[Nginxのプロキシ仕様](https://nginx.org/en/docs/http/ngx_http_proxy_module.html)
+
+`X-Gateway-Request-ID`はNginxが発行し、呼出元とAPIの両方へ渡す。`proxy_intercept_errors off`でAPIのエラー本文を呼出元に届ける。Nginx自身が504を生成した場合は上の`@gateway_timeout`がJSONを返す。[Nginxの応答ヘッダー](https://nginx.org/en/docs/http/ngx_http_headers_module.html#add_header)、[上流の応答時間とヘッダー変数](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#variables)
 
 ```sh
 sudo nginx -t
@@ -453,6 +506,7 @@ printf 'Authorization: Bearer %s\n' "$FILE_SCAN_SEARCH_API_KEY" | \
     https://search.internal.example/search-with-status \
     --header @- --header 'Content-Type: application/json' \
     --data-binary "@$acceptance_dir/request.json" \
+    --dump-header "$acceptance_dir/response.headers" \
     --output "$acceptance_dir/response.json"
 ```
 
@@ -481,6 +535,42 @@ Dify本体の配備とChatflow作成は別作業であり、検索APIを先行�
 API1プロセスの同時検索は4件、DBプール4接続、待ち1秒、質問Embedding4秒、各SQL2秒、全体10秒。これらは現在コードで固定される。複数プロセスにすると枠・接続数もプロセス数分増えるため、単純にworkerを増やす前にDB・外部API・負荷を評価する。
 
 401は接続キー、404は範囲・公開原本、409は互換APIの不足、422は入力や未整備フィルター、429は同時実行、503/504はDB・Embedding・期限等を確認する。全文検索だけへ自動縮退する構成ではない。
+
+### `POST /search-with-status` の504を切り分ける
+
+1. 呼出元で発生時刻・HTTPステータス・応答ヘッダー・本文を確認する。9節のcurl例では `response.headers` と `response.json` に残る。Difyでは失敗したHTTP Requestノードの実行詳細を開く。
+2. 下表で504を返した場所を判定し、該当するIDでVMのログを照合する。
+
+| 呼出元で確認できるもの | 次に確認するもの |
+| --- | --- |
+| JSONの `code=SEARCH_TIMEOUT` | APIが返した504。`error_msg` と `stage` が処理箇所、`timeout_kind` が到達した上限、`elapsed_ms` がAPI受付からの経過ミリ秒。`request_id` でAPIのjournalを検索する。 |
+| JSONの `code=GATEWAY_TIMEOUT` | 8節のNginxが返した504。`gateway_request_id` でアクセスログを引き、同時刻のエラーログを確認する。`while connecting to upstream` ならAPIへの接続、`while reading response header from upstream` なら接続後の応答ヘッダー待ちで時間切れ。 |
+| HTMLの504、本文が空、または呼出元がタイムアウトとだけ表示 | 発生時刻にこのVMのNginxが同じ要求を受けたか、完了後のアクセスログで確認する。VM側が499なら呼出元または前段プロキシが先に接続を閉じた。該当行が見つからなければ、転送先・前段ゲートウェイ・呼出元の待ち時間とログを照合する。 |
+
+```sh
+# 過去の障害も、まず発生時刻の前後を確認する（下は直近15分の例）
+sudo journalctl -u file-search.service --since '15 minutes ago' --no-pager
+sudo tail -n 100 /var/log/nginx/file-search-access.log
+sudo tail -n 100 /var/log/nginx/file-search-error.log
+curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8000/healthz
+
+# 新設定の反映後は、該当する方のIDを応答からコピーして絞り込める
+sudo journalctl -u file-search.service --since '15 minutes ago' --no-pager | grep -F 'request_id=<APIのrequest_id>'
+sudo grep -F 'gateway_request_id=<Nginxのgateway_request_id>' /var/log/nginx/file-search-access.log
+```
+
+APIのjournalには `search_timeout` と処理箇所が残る。検索中に接続が閉じた場合は `search_client_disconnected` と検知時の処理箇所を記録する。Nginx経由ではどちらも `gateway_request_id` で検索できる。DB接続障害でもjournalを利用できる。`/healthz` はAPIとDB・拡張・索引の稼働を検査する。OpenAIへの通信は実際の検索で確認する。
+
+すでに発生した504は、DBの参照権限がある管理者が下記のSQLで同時刻の検索記録も確認できる。旧版で `SEARCH_TIMEOUT` だけが記録されている場合、個別のSQLやEmbeddingまで遡って判定するには当時のDB・プロキシのログが必要になる。本文受信中の時間切れや監視記録の書き込み失敗ではDBに行が残らない。
+
+```sql
+SELECT created_at, request_id, error_code, duration_ms, summary->>'stage' AS stage
+FROM winnap.search_events
+WHERE created_at >= now() - interval '15 minutes' AND result_status = 'failed'
+ORDER BY created_at DESC;
+```
+
+既存環境でこの診断を使うには、新版の検索APIを配備して `sudo systemctl restart file-search.service` を実行する。8節の設定例も `/etc/nginx/conf.d/file-search.conf` へ反映し、`sudo nginx -t` が成功したら `sudo systemctl reload nginx` を実行する。この変更にDB移行は不要。
 
 更新時は別の作業場所で新版を検証する。本番へ反映するときはAPIと取込・Embedding・公開処理、その起動元を停止する。`/opt/file-scan/`直下の`config.local.yaml`・`.env`・`.env.search`を保持して配布ソースを更新する。旧仮想環境を退避してからUbuntu VM手順3節で`/opt/file-scan/.venv/`を作り直し、プロジェクトと仮想環境をroot管理に揃える。`WorkingDirectory`・`EnvironmentFile`・`ExecStart`を確認して再開する。
 
@@ -521,5 +611,7 @@ GroongaのDB自体が壊れてREINDEXもできない場合はファイルを手�
 ## 13. この文書で確認した範囲
 
 取込・検索の設定、CLI、DBと索引、出典、テストモードを現行の実装に照合した。`/opt/file-scan/`直下の設定、VMの配置手順、systemdの環境変数の読み込みを揃えた。PGroongaのUbuntu対応は2026-11-15に公式資料で再確認した。文書内のBash構文とローカル参照リンクも確認した。
+
+2026-11-18にmacOSのPostgreSQL 18.6・PGroonga 4.1.0で検索・取込DB関連の56テストが成功した。8節の設定はローカルのNginx 1.28.3で証明書・ポート・ログのパスを試験用に置き換え、検索の応答待ちを200ミリ秒にして確認した。HTTPS経由で上流の504のJSONが保持されること、上流の応答を遅延させると `GATEWAY_TIMEOUT` が返ること、両方でリクエストIDをログに照合できることを確認した。
 
 この作業では本番VM・DB・Nginx・systemdの設定変更、実資料の公開、実OpenAI呼び出しを行っていない。Ubuntu上の`systemd-analyze verify`・`nginx -t`・実検索・権限・バックアップ復元を実施し、担当者が受入結果を記録してから利用を開始する。

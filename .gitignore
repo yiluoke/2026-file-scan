@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!/.env.search.example
 
 # Source documents, generated artifacts, and logs
 /data/

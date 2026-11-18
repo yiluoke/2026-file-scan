@@ -4,7 +4,7 @@ from sqlalchemy import and_, func, literal_column, or_, select, text
 
 from file_scan.db import tables as core
 from search import schema as s
-from search.errors import SearchError
+from search.errors import SearchError, SearchStage
 from search.ranking import identifiers
 
 
@@ -209,7 +209,7 @@ async def has_candidates(connection, publication_ids, filters):
     return (await connection.execute(select(candidate.exists()))).scalar_one()
 
 
-async def lanes(connection, query, vector, publication_ids, filters, limit, *, semantic_minimum):
+async def lanes(connection, query, vector, publication_ids, filters, limit, *, semantic_minimum, trace):
     graph = s.chunks.join(s.publications)
     allowed = candidate_filter(publication_ids, filters)
     stable = [s.publications.c.generation_id, s.chunks.c.chunk_id, s.chunks.c.publication_id]
@@ -227,6 +227,7 @@ async def lanes(connection, query, vector, publication_ids, filters, limit, *, s
         )
     ).all()
     # Groonga自身で語へ分け、検索式として解釈させず単語検索のバインド値にする。
+    trace.stage = SearchStage.FULLTEXT_SEARCH
     tokens = (
         await connection.execute(
             text(
@@ -263,6 +264,7 @@ async def lanes(connection, query, vector, publication_ids, filters, limit, *, s
     names = identifiers(query)
     exact = []
     if names:
+        trace.stage = SearchStage.IDENTIFIER_SEARCH
         # 単純な完全一致数。文字列は配列値としてbindされ、SQL構文へ展開しない。
         from sqlalchemy import case
 

@@ -12,7 +12,7 @@ from sqlalchemy.exc import SQLAlchemyError, TimeoutError as PoolTimeout
 
 from file_scan.db import tables as core
 from search import repository as repo, schema as s
-from search.errors import SearchError
+from search.errors import SearchError, SearchStage, SearchTrace
 from search.evidence import assemble, fit_response
 from search.ranking import fuse
 
@@ -62,6 +62,10 @@ class QueryEmbedding:
             if len(response.data) != 1 or response.data[0].index != 0:
                 raise SearchError("SEARCH_UNAVAILABLE")
             return validate_vector(response.data[0].embedding, profile["dimensions"])
+        except openai.APITimeoutError:
+            raise SearchError(
+                "SEARCH_TIMEOUT", retryable=True, timeout_kind="embedding_timeout"
+            ) from None
         except openai.AuthenticationError:
             raise SearchError("SEARCH_UNAVAILABLE") from None
         except openai.APIError:
@@ -83,37 +87,45 @@ class RetrievalService:
             allow_history=self.allow_history,
         )
 
-    async def search(self, request, request_id, *, standard=False):
+    async def search(self, request, request_id, *, standard=False, trace=None):
+        trace = trace or SearchTrace()
         started = time.monotonic()
         result = None
         error = None
+        timeout_kind = None
         acquired = False
         try:
             async with asyncio.timeout(self.config.total_timeout):
+                trace.stage = SearchStage.SEARCH_SLOT
                 try:
                     await asyncio.wait_for(self.slots.acquire(), timeout=1)
                 except TimeoutError:
                     raise SearchError("RATE_LIMITED", retryable=True) from None
                 acquired = True
-                result = await self._search(request, request_id)
+                result = await self._search(request, request_id, trace)
                 if standard and result["retrieval_status"]["coverage_state"] != "complete":
                     raise SearchError("COVERAGE_NOT_COMPLETE")
                 if standard and result["retrieval_status"]["result_state"] == "budget_exhausted":
                     raise SearchError("RESULT_BUDGET_EXHAUSTED")
                 return result
         except asyncio.CancelledError:
-            error = "REQUEST_CANCELLED"
+            if trace.http_deadline and trace.http_deadline.expired():
+                error, timeout_kind = "SEARCH_TIMEOUT", "request_deadline"
+            else:
+                error = "REQUEST_CANCELLED"
             raise
         except SearchError as exc:
-            error = exc.code
+            error, timeout_kind = exc.code, exc.timeout_kind
             raise
-        except TimeoutError, PoolTimeout:
+        except (TimeoutError, PoolTimeout) as exc:
             error = "SEARCH_TIMEOUT"
-            raise SearchError("SEARCH_TIMEOUT", retryable=True) from None
+            timeout_kind = "db_pool_timeout" if isinstance(exc, PoolTimeout) else "request_deadline"
+            raise SearchError(error, retryable=True, timeout_kind=timeout_kind) from None
         except SQLAlchemyError as exc:
             sqlstate = getattr(getattr(exc, "orig", None), "sqlstate", None)
             error = "SEARCH_TIMEOUT" if sqlstate == "57014" else "SEARCH_UNAVAILABLE"
-            raise SearchError(error, retryable=True) from None
+            timeout_kind = "db_query_cancelled" if sqlstate == "57014" else None
+            raise SearchError(error, retryable=True, timeout_kind=timeout_kind) from None
         finally:
             if acquired:
                 self.slots.release()
@@ -123,6 +135,10 @@ class RetrievalService:
                     async with asyncio.timeout(0.5):
                         status = result["retrieval_status"] if result else {}
                         summary = {k: v for k, v in status.items() if k not in {"message"}}
+                        if timeout_kind:
+                            summary.update(trace.diagnostics(), timeout_kind=timeout_kind)
+                        elif result and not error:
+                            trace.stage = SearchStage.EVENT_WRITE
                         async with self.engine.begin() as c:
                             await c.execute(
                                 s.events.insert().values(
@@ -150,12 +166,14 @@ class RetrievalService:
                                 )
                             )
                 except Exception:
-                    logger.warning("search_event_write_failed")
+                    logger.warning("search_event_write_failed request_id=%s", request_id)
 
-    async def _search(self, request, request_id):
+    async def _search(self, request, request_id, trace):
         filters = request.filters()
         profile = None
+        trace.stage = SearchStage.DB_CONNECTION
         async with self.engine.connect() as c:
+            trace.stage = SearchStage.SEARCH_SCOPE
             c = await c.execution_options(
                 isolation_level="REPEATABLE READ", postgresql_readonly=True
             )
@@ -182,11 +200,19 @@ class RetrievalService:
                 )
         vector = None
         if profile is not None:
-            async with asyncio.timeout(self.config.embedding_timeout):
-                vector = validate_vector(
-                    await self.embedder(request.query, dict(profile)), profile["dimensions"]
-                )
+            trace.stage = SearchStage.QUERY_EMBEDDING
+            try:
+                async with asyncio.timeout(self.config.embedding_timeout):
+                    vector = validate_vector(
+                        await self.embedder(request.query, dict(profile)), profile["dimensions"]
+                    )
+            except TimeoutError:
+                raise SearchError(
+                    "SEARCH_TIMEOUT", retryable=True, timeout_kind="embedding_timeout"
+                ) from None
+        trace.stage = SearchStage.DB_CONNECTION
         async with self.engine.connect() as c:
+            trace.stage = SearchStage.SEARCH_SCOPE
             c = await c.execution_options(
                 isolation_level="REPEATABLE READ", postgresql_readonly=True
             )
@@ -220,11 +246,12 @@ class RetrievalService:
                     if scope["scan_status"] != "succeeded" or counts["unknown_documents"]
                     else ("incomplete" if any(counts.values()) else "complete")
                 )
-                ranked, rows = [], {}
+                ranked = []
                 if vector is None:
                     if await repo.has_candidates(c, eligible, filters):
                         raise SearchError("SEARCH_UNAVAILABLE", retryable=True)
                 elif eligible:
+                    trace.stage = SearchStage.VECTOR_SEARCH
                     ranked = fuse(
                         await repo.lanes(
                             c,
@@ -234,9 +261,11 @@ class RetrievalService:
                             filters,
                             self.config.candidate_limit,
                             semantic_minimum=self.config.semantic_min_cosine_similarity,
+                            trace=trace,
                         )
                     )
-                    rows = await repo.hydrate(c, [key for key, _ in ranked])
+                trace.stage = SearchStage.EVIDENCE
+                rows = await repo.hydrate(c, [key for key, _ in ranked])
                 records, reasons, result_state = await assemble(
                     c, ranked, rows, scope["release_id"], request.retrieval_setting, self.config,
                     search_mode=scope["search_mode"],
@@ -274,7 +303,9 @@ class RetrievalService:
                     self.config.response_bytes,
                 )
         # 別の最新読み取りで採用切替・台帳変更を検出し、途中の結果を返さない。
+        trace.stage = SearchStage.DB_CONNECTION
         async with self.engine.connect() as c:
+            trace.stage = SearchStage.FRESHNESS_CHECK
             await c.execute(
                 text("SELECT set_config('statement_timeout', :timeout, true)"),
                 {"timeout": str(self.config.statement_timeout_ms)},

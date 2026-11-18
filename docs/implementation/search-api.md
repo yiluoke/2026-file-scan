@@ -2,7 +2,7 @@
 
 画像認識で作成した説明は、原図と照合したうえで `publish --include-image-descriptions` を指定して公開できる。検索結果の `artifact_type: derived` と `related_assets` で由来を確認できる。[画像認識の手順](image-analysis.md)
 
-初回実装日：2026-10-25。手順更新：2026-11-15。文書ACL・SSOを保留した`local_prototype`。Dify配備とChatflowは別途構成する。
+2026-10-25初回実装、2026-11-18手順更新。文書ACL・SSOを保留した`local_prototype`。Dify配備とChatflowは別途構成する。
 
 Ubuntu VMでの本番向け配置・常駐化・HTTPS接続・運用は[本番環境構築手順](search-api-production.md)を参照。
 
@@ -45,6 +45,8 @@ file-search init-db --config config.local.yaml
 ```
 
 `search`追加依存はFastAPI・Starlette・Uvicorn・HTTPX・greenletを固定版で導入する。取り込みだけの利用では不要。`file-search init-db`にはPostgreSQLと[PGroongaの導入](pgroonga.md)が必要で、拡張のインストールや取り込みv3の初期化をAPI起動時に暗黙実行しない。
+
+`file-search init-db`は`src/search/schema.py`の定義から`winnap`に検索専用8表と必須索引3件を作成する。テーブル一覧と本番での実行方法を参照する。[検索スキーマの実装](../../src/search/schema.py)、[検索専用テーブル設計](../design/04-database-tables.md#12-ローカル試作で実装した検索専用スキーマv1)、[本番のテーブル作成手順](search-api-production.md#検索テーブルの定義と作成)
 
 既存の検索スキーマで必須索引が欠落または無効の場合、`file-search init-db`は対象名を報告する。通常モードのhealthと検索は503を返す。索引の修復はDB管理者が行う。[PGroongaの索引確認手順](pgroonga.md#5-検索テーブル全文索引と公開資料を準備する)
 
@@ -95,6 +97,10 @@ file-search unpublish --config config.local.yaml \
 
 ## APIの起動と確認
 
+本番の常駐APIは、[`.env.search.example`](../../.env.search.example)を基に作成する`/opt/file-scan/.env.search`から、systemd経由で環境変数を受け取る。[本番の共通設定と認証情報](search-api-production.md#4-共通設定と認証情報)
+
+`file-search serve`がFastAPIアプリとUvicornをまとめて起動する。本番の待受ポート、環境変数、YAML、HTTPSの設定先は[FastAPIの起動と設定箇所](search-api-production.md#fastapiの起動と設定箇所)を参照。
+
 接続用キーは取り込み用のOpenAI APIキーと別に設定する。例の値は自分の接続用キーへ置き換え、Gitや通常ログへ保存しない。
 
 ```sh
@@ -124,6 +130,32 @@ curl --fail-with-body http://127.0.0.1:8000/search-with-status \
 - 切断・期限超過時は検索とSQL／外部要求をキャンセルし、接続を解放する。
 - 返却は最大20レコード、各2000トークン・合計6000トークン、JSON全体256 KiB。文脈も件数へ含める。引用を切り出した場合は原文字範囲を保持し、正確な位置へ狭められないPDFのbbox・Excelのセル範囲はブロック粒度と明示する。
 - 表を予算内に追跡可能な形で返せない場合は、そのレコードを落として次候補を試す。本文を生成要約へ置換しない。
+
+### 検索が504になったとき
+
+`/search-with-status` と `/retrieval` がAPI内で時間切れになると、次のようなJSONを返す。問い合わせ時は `request_id` と発生時刻を控える。
+
+```json
+{
+  "error_code": 5003,
+  "error_msg": "質問のベクトル化（OpenAI）で制限時間を超えました。",
+  "code": "SEARCH_TIMEOUT",
+  "request_id": "11111111-2222-4333-8444-555555555555",
+  "retryable": true,
+  "stage": "query_embedding",
+  "timeout_kind": "embedding_timeout",
+  "elapsed_ms": 4051
+}
+```
+
+| `timeout_kind` | 読み方 |
+| --- | --- |
+| `embedding_timeout` | 質問をベクトル化する外部要求が時間切れ。API VMからOpenAIまでの通信経路と応答時間を確認する。 |
+| `db_pool_timeout` | DBプールから接続を取得するまでに時間切れ。同時実行数とDB接続の占有状況を確認する。 |
+| `db_query_cancelled` | PostgreSQLがSQLのキャンセルを通知した。`stage` が `fulltext_search` ならPGroonga、`vector_search` ならpgvectorのSQLを確認する。各SQLの制限時間またはDB側のキャンセル記録を確認する。 |
+| `request_deadline` | 要求全体が時間切れ。`stage` はその時点で実行中だった処理。`elapsed_ms` には、それ以前の処理とキャンセルの後処理も含む。 |
+
+応答が `GATEWAY_TIMEOUT`、HTML、または本文を取得できなかった場合のログ確認は[本番手順の504の切り分け](search-api-production.md#post-search-with-status-の504を切り分ける)を参照。
 
 ### 原本と画像を確認する
 

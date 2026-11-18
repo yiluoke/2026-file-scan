@@ -283,8 +283,8 @@ def test_validation_auth_size_and_no_secret_echo(search_db):
         )
 
 
-def test_embedding_failure_and_deadline_are_not_empty_results(search_db):
-    _, _, _, _, factory, _ = search_db
+def test_embedding_failure_and_deadline_are_not_empty_results(search_db, caplog):
+    settings, engine, _, _, factory, _ = search_db
     publish_first(search_db)
 
     async def fail(query, profile):
@@ -298,12 +298,57 @@ def test_embedding_failure_and_deadline_are_not_empty_results(search_db):
         await asyncio.sleep(1)
         return [1.0, 0.0, 0.0]
 
-    settings, *_ = search_db
-    config = SearchSettings(settings, "search-test-key", embedding_timeout=0.02)
-    with factory(config=config, embedder=slow) as client:
-        result = client.post("/search-with-status", json=body(), headers=AUTH)
-        assert result.status_code == 504
-        assert client.get("/healthz").status_code == 200
+    gateway_id = "ab" * 16
+    for total, embedding, kind in [(10, 0.02, "embedding_timeout"), (0.5, 4, "request_deadline")]:
+        config = SearchSettings(
+            settings, "search-test-key", total_timeout=total, embedding_timeout=embedding
+        )
+        with factory(config=config, embedder=slow) as client:
+            result = client.post(
+                "/search-with-status", json=body(), headers=AUTH | {"X-Gateway-Request-ID": gateway_id}
+            )
+            assert result.status_code == 504
+            data = result.json()
+            request_id = data["request_id"]
+            assert data["code"] == "SEARCH_TIMEOUT" and data["error_code"] == 5003
+            assert data["stage"] == "query_embedding" and data["timeout_kind"] == kind
+            assert data["elapsed_ms"] >= min(total, embedding) * 1000
+            assert result.headers["X-Request-ID"] == request_id
+            assert (
+                f"request_id={request_id} gateway_request_id={gateway_id} stage=query_embedding"
+                in caplog.text
+            )
+            assert body()["query"] not in caplog.text and AUTH["Authorization"] not in caplog.text
+            assert client.get("/healthz").status_code == 200
+        with engine.connect() as c:
+            event = c.execute(
+                select(schema.events).where(schema.events.c.request_id == request_id)
+            ).mappings().one()
+            assert event["error_code"] == "SEARCH_TIMEOUT"
+            assert event["summary"]["stage"] == "query_embedding"
+            assert event["summary"]["timeout_kind"] == kind
+
+
+def test_pool_timeout_is_traceable_when_event_cannot_be_written(search_db, caplog):
+    from sqlalchemy.exc import TimeoutError as PoolTimeout
+
+    class ExhaustedPool:
+        def connect(self):
+            raise PoolTimeout("private-db-details")
+
+        def begin(self):
+            raise PoolTimeout("private-db-details")
+
+    _, _, _, _, factory, _ = search_db
+    with factory() as client:
+        client.app.state.service.engine = ExhaustedPool()
+        response = client.post("/search-with-status", json=body(), headers=AUTH)
+    data = response.json()
+    assert response.status_code == 504
+    assert data["stage"] == "db_connection" and data["timeout_kind"] == "db_pool_timeout"
+    assert f"search_event_write_failed request_id={data['request_id']}" in caplog.text
+    assert f"search_timeout request_id={data['request_id']}" in caplog.text
+    assert "private-db-details" not in caplog.text + response.text
 
 
 def test_partial_approval_is_explicit(search_db):
@@ -553,20 +598,28 @@ def test_disconnect_cancels_embedding_and_releases_connections(search_db):
     asyncio.run(scenario())
 
 
-def test_database_timeout_cancels_statement_and_pool_recovers(search_db, monkeypatch):
+@pytest.mark.parametrize("stage,sql_marker", [
+    ("vector_search", "<=>"), ("fulltext_search", "pgroonga_tokenize"),
+])
+def test_database_timeout_cancels_statement_and_pool_recovers(search_db, stage, sql_marker):
     settings, _, _, _, factory, _ = search_db
     publish_first(search_db)
-    from search import repository
+    from sqlalchemy import event
 
-    async def blocked(connection, *args, **kwargs):
-        await connection.execute(text("SELECT pg_sleep(0.2)"))
-        return [[], [], []]
-
-    monkeypatch.setattr(repository, "lanes", blocked)
-    config = SearchSettings(settings, "search-test-key", statement_timeout_ms=20)
+    config = SearchSettings(settings, "search-test-key", statement_timeout_ms=100)
     with factory(config=config) as client:
-        response = client.post("/search-with-status", json=body(), headers=AUTH)
+        engine = client.app.state.service.engine
+
+        @event.listens_for(engine.sync_engine, "before_cursor_execute", retval=True)
+        def delay_lane(conn, cursor, statement, parameters, context, executemany):
+            if sql_marker in statement:
+                return "SELECT pg_sleep(0.5)", ()
+            return statement, parameters
+
+        response = client.post("/retrieval", json=body(), headers=AUTH)
         assert response.status_code == 504, response.text
+        assert response.json()["stage"] == stage
+        assert response.json()["timeout_kind"] == "db_query_cancelled"
         assert client.app.state.service.engine.pool.checkedout() == 0
         assert client.get("/healthz").status_code == 200
 
@@ -579,7 +632,7 @@ def test_query_embedding_uses_saved_profile_and_does_not_retry(search_db, monkey
 
     original = openai.AsyncOpenAI
     calls = []
-    failing = False
+    failure = None
 
     async def handle(request):
         payload = json.loads(request.content)
@@ -587,7 +640,9 @@ def test_query_embedding_uses_saved_profile_and_does_not_retry(search_db, monkey
         assert payload["model"] == "text-embedding-3-large"
         assert payload["dimensions"] == 2
         assert payload["input"] == ["質問文だけ"]
-        if failing:
+        if failure == "timeout":
+            raise httpx.ReadTimeout("private-timeout-detail", request=request)
+        if failure == "server_error":
             return httpx.Response(500, json={"error": {"message": "private-error-body"}})
         return httpx.Response(
             200,
@@ -613,9 +668,13 @@ def test_query_embedding_uses_saved_profile_and_does_not_retry(search_db, monkey
     }
     embedder = QueryEmbedding(SearchSettings(settings, "search-test-key"))
     assert asyncio.run(embedder("質問文だけ", profile)) == [1.0, 0.0]
-    failing = True
+    failure = "server_error"
     with pytest.raises(SearchError) as error:
         asyncio.run(embedder("質問文だけ", profile))
     assert error.value.code == "SEARCH_UNAVAILABLE" and error.value.retryable
     assert "private-error-body" not in str(error.value)
-    assert len(calls) == 2
+    failure = "timeout"
+    with pytest.raises(SearchError) as error:
+        asyncio.run(embedder("質問文だけ", profile))
+    assert error.value.code == "SEARCH_TIMEOUT" and error.value.timeout_kind == "embedding_timeout"
+    assert len(calls) == 3

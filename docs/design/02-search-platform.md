@@ -3,7 +3,7 @@
 日本語スキャンPDFのOCR本文はRapidOCR＋ONNX Runtime CPUで抽出したsourceとして、既存の全文・ベクトル検索経路へ渡す。文字認識誤りはEmbeddingで補正されない。原本ページ・bboxを根拠として保持する。設定で生成したPDF・Office画像の説明はderivedとし、原図との照合後に明示公開する。[日本語OCR](../implementation/rapidocr-pdf.md)・[画像認識](../implementation/image-analysis.md)
 
 - 作成日: 2026-10-12
-- 最終更新日: 2026-11-15
+- 最終更新日: 2026-11-18
 - 状態: ローカル試作の検索API・公開管理は実装済み。文書ACL・Dify本体は後続
 - 対象: 部署内の維持管理システムに関するWord・Excel・PDF・TXT・Markdown文書の検索
 - 開発環境: PostgreSQL 18.6・pgvector 0.8.6・PGroonga 4.1.0を導入済み。本番環境は別途検証
@@ -417,8 +417,10 @@ ChatflowはHTTP Requestノードの成功・失敗を先に判定する。テス
 | 413 / 415 / 422 | `REQUEST_TOO_LARGE`（4001）/ `UNSUPPORTED_MEDIA_TYPE`（4002）/ `INVALID_REQUEST`（4003） | 入力修正。自動再試行しない |
 | 429 | `RATE_LIMITED`（5001） | 呼び出し元の制限。`Retry-After`に従う |
 | 503 | `SEARCH_UNAVAILABLE`（5002） | DB・質問Embedding・必須経路・認可基盤が利用不能 |
-| 504 | `SEARCH_TIMEOUT`（5003） | 要求の全体期限超過 |
+| 504 | `SEARCH_TIMEOUT`（5003） | 検索全体・Embedding・DB接続待ちの期限超過、またはDBが実行中のSQLをキャンセル |
 | 500 | `INTERNAL_ERROR`（9001） | 想定外の障害。request IDで調査 |
+
+両検索APIの504には、処理箇所 `stage`、期限の種別 `timeout_kind`、API受付からの経過ミリ秒 `elapsed_ms` を追加する。`request_id` は応答の `X-Request-ID` と一致し、DBに書き込めない場合もサービスログで追跡できる。Nginxが発行する `X-Gateway-Request-ID` で、プロキシの待ち時間も照合する。[エラー応答の例](../implementation/search-api.md#検索が504になったとき)
 
 初期版は必須検索経路の実行失敗時に503/504とし、全文だけ等への黙った縮退を行わない。識別子が質問に含まれない場合の経路省略や正常な0件は失敗ではない。原本別のベクトル欠落・部分抽出はcoverageの不足であり、外部APIやDBの実行障害とは区別する。
 

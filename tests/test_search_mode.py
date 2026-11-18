@@ -1,5 +1,9 @@
 """DB・外部APIが使えない環境でも設定から固定応答へ切り替えられることを確認。"""
 
+import asyncio
+from dataclasses import replace
+
+import httpx
 import pytest
 import yaml
 
@@ -33,6 +37,33 @@ def test_config(tmp_path, monkeypatch):
 
 def forbidden(*args, **kwargs):
     pytest.fail("テストモードでDB・検索サービス・取込設定を使用しました")
+
+
+def test_deadline_while_receiving_body(test_config, caplog):
+    settings = replace(config.load_search_settings(test_config), total_timeout=0.02)
+    app = api.create_app(settings)
+
+    async def slow_body():
+        yield b"{"
+        await asyncio.sleep(1)
+        yield b"}"
+
+    async def run():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post(
+                "/search-with-status", content=slow_body(),
+                headers=AUTH | {
+                    "Content-Type": "application/json", "X-Gateway-Request-ID": "private-value"
+                },
+            )
+
+    result = asyncio.run(run())
+    assert result.status_code == 504
+    data = result.json()
+    assert data["stage"] == "request_body" and data["timeout_kind"] == "request_deadline"
+    assert result.headers["x-request-id"] == data["request_id"]
+    assert "gateway_request_id=-" in caplog.text and "private-value" not in caplog.text
 
 
 def test_fixed_response_without_database_or_embedding(test_config, monkeypatch):

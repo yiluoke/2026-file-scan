@@ -3,6 +3,8 @@
 import asyncio
 import hashlib
 import hmac
+import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -21,7 +23,7 @@ from file_scan.storage import _open_no_follow
 from search import repository as repo
 from search import schema as s
 from search.config import async_database
-from search.errors import SearchError
+from search.errors import SearchError, SearchStage, SearchTrace
 from search.evidence import IMAGE_ASSET_ROLES
 from search.models import SearchInput, SearchRequest, SearchResponse, RetrievalResponse
 from search.service import RetrievalService
@@ -29,6 +31,7 @@ from search.stub import fixed_response
 
 
 DownloadMode = Literal["current", "history"]
+logger = logging.getLogger(__name__)
 IMAGE_EXTENSIONS = {
     "image/png": "png",
     "image/jpeg": "jpg",
@@ -39,6 +42,23 @@ IMAGE_EXTENSIONS = {
 }
 
 
+def error_response(error, state):
+    payload = error.response(state["request_id"])
+    trace = state.get("search_trace")
+    if error.code == "SEARCH_TIMEOUT" and trace:
+        payload.update(trace.diagnostics(), timeout_kind=error.timeout_kind)
+        payload["error_msg"] = f"{trace.stage.value}で制限時間を超えました。"
+        logger.warning(
+            "search_timeout request_id=%s gateway_request_id=%s stage=%s timeout_kind=%s elapsed_ms=%d",
+            state["request_id"], state["gateway_request_id"], payload["stage"],
+            error.timeout_kind, payload["elapsed_ms"],
+        )
+    headers = {"X-Request-ID": state["request_id"]}
+    if error.code == "RATE_LIMITED":
+        headers["Retry-After"] = "1"
+    return JSONResponse(payload, status_code=error.status, headers=headers)
+
+
 class RequestBoundary:
     def __init__(self, app, config):
         self.app, self.config = app, config
@@ -47,17 +67,23 @@ class RequestBoundary:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         request_id = str(uuid4())
-        scope.setdefault("state", {})["request_id"] = request_id
-        protected = scope["path"] in {"/retrieval", "/search-with-status"} or scope[
-            "path"
-        ].startswith("/sources/")
+        state = scope.setdefault("state", {})
+        state["request_id"] = request_id
+        is_search = scope["path"] in {"/retrieval", "/search-with-status"}
+        protected = is_search or scope["path"].startswith("/sources/")
+        headers = dict(scope["headers"])
+        if is_search:
+            trace = state["search_trace"] = SearchTrace()
+            gateway_id = headers.get(b"x-gateway-request-id", b"")
+            state["gateway_request_id"] = (
+                gateway_id.decode("ascii") if re.fullmatch(rb"[0-9a-f]{32}", gateway_id) else "-"
+            )
         try:
-            headers = dict(scope["headers"])
             if protected and not hmac.compare_digest(
                 headers.get(b"authorization", b""), b"Bearer " + self.config.api_key.encode()
             ):
                 raise SearchError("UNAUTHENTICATED")
-            if scope["path"] in {"/retrieval", "/search-with-status"}:
+            if is_search:
                 if (
                     headers.get(b"content-type", b"").split(b";", 1)[0].lower()
                     != b"application/json"
@@ -66,7 +92,8 @@ class RequestBoundary:
                 if b"content-encoding" in headers:
                     raise SearchError("UNSUPPORTED_MEDIA_TYPE")
                 body = bytearray()
-                async with asyncio.timeout(self.config.total_timeout):
+                async with asyncio.timeout(self.config.total_timeout) as deadline:
+                    trace.http_deadline = deadline
                     while True:
                         message = await receive()
                         if message["type"] == "http.disconnect":
@@ -85,21 +112,30 @@ class RequestBoundary:
                             return {"type": "http.request", "body": bytes(body), "more_body": False}
                         return await receive()
 
-                    await self.app(scope, replay, send)
+                    async def send_response(message):
+                        if message["type"] == "http.response.start":
+                            deadline.reschedule(None)
+                            response_headers = message.setdefault("headers", [])
+                            if not any(k == b"x-request-id" for k, _ in response_headers):
+                                response_headers.append((b"x-request-id", request_id.encode("ascii")))
+                        await send(message)
+
+                    trace.stage = SearchStage.VALIDATION
+                    await self.app(scope, replay, send_response)
                 return
             await self.app(scope, receive, send)
         except asyncio.CancelledError:
-            if not scope.get("state", {}).get("client_disconnected"):
+            if not state.get("client_disconnected"):
                 raise
+            logger.warning(
+                "search_client_disconnected request_id=%s gateway_request_id=%s stage=%s",
+                request_id, state["gateway_request_id"], trace.stage.name.lower(),
+            )
         except SearchError as error:
-            await JSONResponse(error.response(request_id), status_code=error.status)(
-                scope, receive, send
-            )
+            await error_response(error, state)(scope, receive, send)
         except TimeoutError:
-            error = SearchError("SEARCH_TIMEOUT", retryable=True)
-            await JSONResponse(error.response(request_id), status_code=error.status)(
-                scope, receive, send
-            )
+            error = SearchError("SEARCH_TIMEOUT", retryable=True, timeout_kind="request_deadline")
+            await error_response(error, state)(scope, receive, send)
 
 
 def create_app(config, *, engine=None, embedder=None, allow_history=False):
@@ -124,11 +160,7 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
 
     @app.exception_handler(SearchError)
     async def search_error(request, error):
-        return JSONResponse(
-            error.response(request.state.request_id),
-            status_code=error.status,
-            headers={"Retry-After": "1"} if error.code == "RATE_LIMITED" else None,
-        )
+        return error_response(error, request.scope["state"])
 
     @app.exception_handler(RequestValidationError)
     async def input_error(request, error):
@@ -178,7 +210,9 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
             raise SearchError("SEARCH_UNAVAILABLE", retryable=True) from None
 
     async def run_search(payload, request, *, standard=False):
+        trace = request.state.search_trace
         if config.test_mode:
+            trace.stage = SearchStage.RESPONSE
             return fixed_response(request.state.request_id, config.config_version)
 
         # ASGIの切断通知と検索処理を競合させ、切断時もDB待機・外部要求を取り消す。
@@ -189,14 +223,16 @@ def create_app(config, *, engine=None, embedder=None, allow_history=False):
                     return
 
         work = asyncio.create_task(
-            service.search(payload, request.state.request_id, standard=standard)
+            service.search(payload, request.state.request_id, trace=trace, standard=standard)
         )
         monitor = asyncio.create_task(disconnected())
         try:
             done, _ = await asyncio.wait({work, monitor}, return_when=asyncio.FIRST_COMPLETED)
             if monitor in done and work not in done:
                 raise asyncio.CancelledError
-            return await work
+            result = await work
+            trace.stage = SearchStage.RESPONSE
+            return result
         except SearchError, asyncio.CancelledError:
             raise
         except Exception:
