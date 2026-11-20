@@ -52,7 +52,28 @@ def _verify_render_input(source: Path) -> None:
                         raise ValueError("office_render_external_content")
 
 
-def _render_pdf(source: Path, file_format: str, directory: Path, timeout: int) -> Path:
+def _copy_render_input(source: Path, local: Path, hidden_drawing_parts: list[str]) -> None:
+    if not hidden_drawing_parts:
+        shutil.copyfile(source, local)
+        return
+
+    from lxml import etree
+    from file_scan.parsers import _omit_hidden_drawings
+
+    # OOXMLの名前空間接頭辞を保ち、レンダラーにも除外済みの描画だけを渡す。
+    with ZipFile(source) as incoming, ZipFile(local, "w") as outgoing:
+        for part in incoming.infolist():
+            if part.filename in hidden_drawing_parts:
+                xml = etree.fromstring(incoming.read(part), etree.XMLParser(resolve_entities=False))
+                _omit_hidden_drawings(xml)
+                outgoing.writestr(part, etree.tostring(xml, encoding="utf-8"))
+            else:
+                with incoming.open(part) as original, outgoing.open(part, "w") as copied:
+                    shutil.copyfileobj(original, copied)
+
+
+def _render_pdf(source: Path, file_format: str, directory: Path, timeout: int,
+                hidden_drawing_parts: list[str]) -> Path:
     executable = shutil.which("soffice")
     if not executable:
         raise ValueError("office_render_unavailable")
@@ -61,7 +82,7 @@ def _render_pdf(source: Path, file_format: str, directory: Path, timeout: int) -
     (profile / "user").mkdir(parents=True)
     (profile / "user" / "registrymodifications.xcu").write_text(PROFILE, encoding="utf-8")
     local = directory / f"document.{file_format}"
-    shutil.copyfile(source, local)
+    _copy_render_input(source, local, hidden_drawing_parts)
     environment = {key: os.environ[key] for key in (
         "PATH", "SystemRoot", "WINDIR", "LANG", "LC_ALL",
     ) if key in os.environ}
@@ -101,7 +122,8 @@ def append_rendered_regions(result: ExtractionResult, source: Path, file_format:
     warning = "office_render_no_graphic_region"
     try:
         with tempfile.TemporaryDirectory(prefix="file-scan-office-") as temporary:
-            output = _render_pdf(source, file_format, Path(temporary).resolve(), settings.timeout_seconds)
+            output = _render_pdf(source, file_format, Path(temporary).resolve(), settings.timeout_seconds,
+                                 result.metrics.get("hidden_drawing_parts", []))
             with pdfium.PdfDocument(output) as document:
                 limit = min(len(document), MAX_PREVIEW_PAGES)
                 rendered = 0

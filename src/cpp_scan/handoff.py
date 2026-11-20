@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 
 from sqlalchemy import select
 
@@ -24,7 +25,8 @@ def _configuration(settings):
     if settings.file_scan_config is None:
         raise ScanError("file_scan_config_required")
     config = load_config(settings.file_scan_config)
-    current = settings.artifact_root / "handoff" / "current"
+    handoff = (settings.artifact_root / "handoff").resolve()
+    current = handoff / "current"
     if (len(config.sources) != 1 or config.sources[0].root != current
             or set(config.include_extensions) != {".md"} or not config.sources[0].recursive
             or config.sources[0].exclude_directories or config.sources[0].exclude_filenames
@@ -33,9 +35,10 @@ def _configuration(settings):
         raise ScanError("dedicated_markdown_ingestion_config_required")
     # 保管・レポートを原本や受渡しの中へ作成しない。
     for output in (config.storage_dir, config.report_dir):
-        if output.resolve().is_relative_to(settings.source_root):
+        output = output.resolve()
+        if output.is_relative_to(settings.source_root):
             raise ScanError("ingestion_output_overlaps_source")
-        if current.is_relative_to(output.resolve()):
+        if handoff.is_relative_to(output) or output.is_relative_to(handoff):
             raise ScanError("ingestion_output_overlaps_handoff")
     return config
 
@@ -72,7 +75,7 @@ def _recover(settings):
 def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=False, engine=None):
     owned_engine = engine is None
     with project_lock(settings.artifact_root), stage(settings, "ingest") as record:
-        _recover(settings)
+        config = _configuration(settings)
         manifest, snapshot = load_generation(settings, generation_id, with_snapshot=True)
         record["generation_id"] = generation_id
         _, analysis = load_analysis(settings, manifest["analysis_id"])
@@ -80,7 +83,6 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
             raise ScanError("generation_snapshot_mismatch")
         if manifest["status"] == "partial" and not settings.allow_partial_ingest:
             raise ScanError("partial_generation_ingestion_disabled")
-        config = _configuration(settings)
         record["knowledge_id"] = config.knowledge_id
         current = settings.artifact_root / "handoff" / "current"
         source_root = snapshot.get("source_root")
@@ -89,17 +91,6 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
         binding = {"source_id": config.sources[0].source_id, "knowledge_id": config.knowledge_id,
                    "root": str(current), "scope": _scope(snapshot["profile"]),
                    "source_root": source_root}
-        value = state(settings)
-        previous = value.get("handoff_binding")
-        scope_changed = False
-        if previous:
-            if any(binding[k] != previous[k] for k in ("source_id", "knowledge_id", "root")):
-                raise ScanError("handoff_identity_change_rejected")
-            scope_changed = (binding["scope"] != previous["scope"]
-                             or source_root != previous.get("source_root"))
-            if scope_changed:
-                record["scope_change"] = {"previous_source_root": previous.get("source_root"),
-                                          "source_root": source_root}
         if manifest["status"] == "partial" and accept_scope_change:
             raise ScanError("partial_generation_cannot_change_scope")
         if engine is None:
@@ -108,6 +99,10 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
             # 既存スキーマと保管先を配置前に確認。自動DB初期化・削除・公開は行わない。
             require_schema(engine)
             with engine.connect() as conn:
+                if conn.dialect.name == "sqlite":
+                    for _, _, filename in conn.exec_driver_sql("PRAGMA database_list"):
+                        if filename and Path(filename).resolve().is_relative_to(current.parent.resolve()):
+                            raise ScanError("ingestion_output_overlaps_handoff")
                 stored_root = conn.execute(select(tables["ingestion_settings"].c.storage_root)).scalar()
                 if stored_root and stored_root != str(config.storage_dir.resolve()):
                     raise ScanError("existing_database_storage_root_mismatch")
@@ -124,6 +119,19 @@ def ingest(settings, generation_id, *, retry_partial=False, accept_scope_change=
                     members.c.knowledge_id != config.knowledge_id)).first()
                 if other:
                     raise ScanError("source_id_used_by_other_knowledge")
+            # 復旧も受渡し内を削除するため、DBに結び付いた保管先の確認後に行う。
+            _recover(settings)
+            value = state(settings)
+            previous = value.get("handoff_binding")
+            scope_changed = False
+            if previous:
+                if any(binding[k] != previous[k] for k in ("source_id", "knowledge_id", "root")):
+                    raise ScanError("handoff_identity_change_rejected")
+                scope_changed = (binding["scope"] != previous["scope"]
+                                 or source_root != previous.get("source_root"))
+                if scope_changed:
+                    record["scope_change"] = {"previous_source_root": previous.get("source_root"),
+                                              "source_root": source_root}
             incoming = {item["path"]: item["sha256"] for item in manifest["document_files"]}
             retained = []
             if manifest["status"] == "partial" and current.exists():

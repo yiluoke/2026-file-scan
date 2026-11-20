@@ -31,7 +31,7 @@ from file_scan.db import SCHEMA_VERSION, tables
 from file_scan.domain import Chunk, ExtractionResult
 from file_scan.storage import Storage, StorageError, StoredAsset
 from file_scan.profiles import conversion_profile
-from file_scan.workers import ACTIVE_POOL, ParsePool
+from file_scan.workers import ACTIVE_POOL, ParsePool, parse_timeout
 
 
 class PipelineError(RuntimeError):
@@ -134,6 +134,17 @@ def _start_job(conn: Connection, knowledge_id: str, stage: str, job_key: str,
     return run_id
 
 
+def _conversion_lease_seconds(settings: Settings, file_format: str) -> int:
+    seconds = parse_timeout(settings, file_format) + 300
+    vision = settings.image_analysis
+    if vision.applies_to(file_format):
+        requests = vision.max_images_per_document
+        if file_format != "pdf" and vision.render_office:
+            requests += 1
+        seconds += requests * vision.timeout_seconds
+    return seconds
+
+
 def _finish_job(conn: Connection, run_id: str, status: str, error_code: str | None = None) -> None:
     jobs = tables["index_jobs"]
     conditions = [jobs.c.run_id == run_id, jobs.c.status == "running", jobs.c.lease_version == 1]
@@ -159,9 +170,31 @@ def _recover_jobs(conn: Connection) -> None:
     ))
 
 
+def _advance_catalog(conn, knowledge_ids):
+    catalog = tables["knowledge_bases"]
+    conn.execute(catalog.update().where(catalog.c.knowledge_id.in_(knowledge_ids)).values(
+        catalog_revision=catalog.c.catalog_revision + 1))
+
+
+def _document_catalogs(document_id):
+    members = tables["knowledge_documents"]
+    return select(members.c.knowledge_id).where(
+        members.c.document_id == document_id, members.c.included.is_(True))
+
+
+def _set_collection_state(conn, knowledge_id, document_id, status, error=None):
+    members = tables["knowledge_documents"]
+    result = conn.execute(members.update().where(
+        members.c.knowledge_id == knowledge_id, members.c.document_id == document_id,
+        (members.c.collection_status != status) | members.c.last_error_code.is_distinct_from(error),
+    ).values(collection_status=status, last_error_code=error))
+    return result.rowcount > 0
+
+
 def _register_discovery(conn: Connection, settings: Settings, scan: ScanResult,
-                        scan_id: str, unchanged_ids: set[str]) -> None:
+                        scan_id: str, unchanged_ids: set[str]) -> bool:
     documents, memberships = tables["documents"], tables["knowledge_documents"]
+    membership_changed = False
     for item in scan.items:
         if item.document_id in unchanged_ids:
             conn.execute(memberships.update().where(
@@ -178,26 +211,31 @@ def _register_discovery(conn: Connection, settings: Settings, scan: ScanResult,
             last_observed_at=utcnow(),
         ))
         identity = {"knowledge_id": settings.knowledge_id, "document_id": item.document_id}
-        _insert_missing(conn, memberships, identity, {})
-        conn.execute(memberships.update().where(and_(
-            *(memberships.c[key] == value for key, value in identity.items())
-        )).values(included=True, collection_status="pending", last_seen_scan_id=scan_id,
-                  last_error_code=None))
-        selections = tables["selected_generations"]
-        conn.execute(selections.update().where(
-            selections.c.knowledge_id == settings.knowledge_id,
-            selections.c.document_id == item.document_id).values(generation_id=None))
+        membership = and_(*(memberships.c[key] == value for key, value in identity.items()))
+        included = conn.scalar(select(memberships.c.included).where(membership))
+        if included is None:
+            conn.execute(memberships.insert().values(**identity, last_seen_scan_id=scan_id))
+        elif included:
+            # 再走査中も、最後に確認した状態・選択世代で検索できる。
+            conn.execute(memberships.update().where(membership).values(last_seen_scan_id=scan_id))
+        else:
+            conn.execute(memberships.update().where(membership).values(
+                included=True, collection_status="pending", last_seen_scan_id=scan_id,
+                last_error_code=None))
+        membership_changed |= not included
+    return membership_changed
 
 
-def _reconcile_missing(conn: Connection, settings: Settings, scan: ScanResult) -> int:
+def _reconcile_missing(conn: Connection, settings: Settings, scan: ScanResult) -> tuple[int, bool]:
     """消えた原本だけを論理削除。除外・列挙障害・収集元削除とは区別する。"""
     docs, members = tables["documents"], tables["knowledge_documents"]
     seen = {item.document_id for item in scan.items}
     configured = {source.source_id for source in settings.sources}
-    rows = conn.execute(select(docs).join(members).where(
+    rows = conn.execute(select(docs, members.c.last_error_code).join(members).where(
         members.c.knowledge_id == settings.knowledge_id, members.c.included.is_(True)
     )).mappings().all()
     deleted = 0
+    changed = False
     for row in rows:
         if row["document_id"] in seen:
             continue
@@ -210,20 +248,23 @@ def _reconcile_missing(conn: Connection, settings: Settings, scan: ScanResult) -
             ) for e in scan.exclusions
         )
         if excluded:
+            changed = True
             conn.execute(members.update().where(membership).values(
                 included=False, collection_status="excluded", last_error_code=None))
         elif row["source_system"] not in scan.successful_sources:
+            changed |= row["last_error_code"] != "scan_incomplete"
             conn.execute(members.update().where(membership).values(
                 collection_status="failed", last_error_code="scan_incomplete"))
-            conn.execute(docs.update().where(docs.c.document_id == row["document_id"]).values(
-                source_status="unavailable"))
         else:
+            changed |= row["last_error_code"] != "source_deleted"
             conn.execute(docs.update().where(docs.c.document_id == row["document_id"]).values(
                 source_status="deleted"))
             conn.execute(members.update().where(membership).values(
                 collection_status="failed", last_error_code="source_deleted"))
-            deleted += row["source_status"] != "deleted"
-    return deleted
+            if row["source_status"] != "deleted":
+                _advance_catalog(conn, _document_catalogs(row["document_id"]))
+                deleted += 1
+    return deleted, changed or bool(deleted)
 
 
 def _put_asset(conn: Connection, asset: StoredAsset) -> None:
@@ -509,17 +550,14 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
             if (catalog["system_id"], catalog["environment"]) != (settings.system_id, settings.environment):
                 raise PipelineError("同じknowledge_idのシステム・環境を変更できません")
             _recover_jobs(conn)
-            if scan is None:
-                conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id)
-                             .values(scan_status="running"))
             scan_id = _start_job(conn, settings.knowledge_id, "scan",
                                  digest([settings.knowledge_id, "scan"]))
         if scan is None:
             scan = collect(settings)
         report["scan_errors"], report["exclusions"] = scan.errors, scan.exclusions
         with engine.begin() as conn:
-            _register_discovery(conn, settings, scan, scan_id, set(unchanged))
-            deleted = _reconcile_missing(conn, settings, scan)
+            discovered = _register_discovery(conn, settings, scan, scan_id, set(unchanged))
+            deleted, removed_or_failed = _reconcile_missing(conn, settings, scan)
             scan_status = "partial" if scan.errors else "succeeded"
             # バッチ排他を持ち続けて完了した列挙なので、回収されていない自分の
             # ジョブだけを更新する。300秒を超える棚卸しでも失敗記録を失わない。
@@ -529,8 +567,7 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
             ).values(lease_until=utcnow() + timedelta(seconds=300)))
             _finish_job(conn, scan_id, scan_status)
             values = {"scan_status": scan_status}
-            if (verified_markdown is None or len(unchanged) != len(scan.items) or deleted
-                    or catalog["scan_status"] != scan_status):
+            if discovered or removed_or_failed or catalog["scan_status"] != scan_status:
                 values["catalog_revision"] = kb.c.catalog_revision + 1
             if not scan.errors:
                 values["last_successful_scan_at"] = utcnow()
@@ -550,7 +587,7 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                 with engine.connect() as conn:
                     assets = tables["artifact_assets"]
                     versions = tables["document_versions"]
-                    known = conn.execute(select(assets).join(versions, versions.c.asset_id == assets.c.asset_id)
+                    known = conn.execute(select(assets, docs.c.source_status).join(versions, versions.c.asset_id == assets.c.asset_id)
                         .join(docs, and_(docs.c.document_id == versions.c.document_id,
                                         docs.c.latest_source_version == versions.c.source_version))
                         .where(docs.c.document_id == item.document_id)).mappings().first()
@@ -571,10 +608,9 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                     conn.execute(docs.update().where(docs.c.document_id == item.document_id).values(
                         latest_source_version=original.asset_id, source_status="available",
                         source_modified_at=original.source_modified_at))
-                    conn.execute(members.update().where(
-                        members.c.knowledge_id == settings.knowledge_id,
-                        members.c.document_id == item.document_id,
-                    ).values(collection_status="available", last_error_code=None))
+                    if (not known or known["asset_id"] != original.asset_id
+                            or known["source_status"] != "available"):
+                        _advance_catalog(conn, _document_catalogs(item.document_id))
                     _finish_job(conn, job_id, "succeeded")
                     job_id = None
                 stage = "convert"
@@ -596,9 +632,14 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                     identity = {"knowledge_id": settings.knowledge_id, "document_id": item.document_id}
                     _insert_missing(conn, selection, identity, {
                         "generation_id": generation_id, "conversion_revision": revision})
-                    conn.execute(selection.update().where(selection.c.knowledge_id == settings.knowledge_id,
-                        selection.c.document_id == item.document_id).values(
-                            generation_id=generation_id, conversion_revision=revision))
+                    switched = conn.execute(selection.update().where(
+                        selection.c.knowledge_id == settings.knowledge_id,
+                        selection.c.document_id == item.document_id,
+                        selection.c.generation_id.is_distinct_from(generation_id),
+                    ).values(generation_id=generation_id, conversion_revision=revision)).rowcount
+                    recovered = _set_collection_state(conn, settings.knowledge_id, item.document_id, "available")
+                    if switched or recovered:
+                        _advance_catalog(conn, [settings.knowledge_id])
                 if existing and (existing["processing_status"] == "succeeded" or (
                     existing["processing_status"] == "partial" and not retry_partial
                 )):
@@ -618,7 +659,7 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                     })
                     job_id = _start_job(conn, settings.knowledge_id, "convert",
                                         digest([generation_id, "convert"]), item.document_id,
-                                        generation_id, settings.parse_timeout_seconds + 300)
+                                        generation_id, _conversion_lease_seconds(settings, item.format))
                 result = None if retry_partial else load_extraction(engine, storage, cache_key)
                 entry["extraction_cached"] = result is not None
                 if result is None:
@@ -631,11 +672,12 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                                       settings.chunk_max_tokens, settings.chunk_context_max_tokens)
                 stored = [storage.put_bytes(asset.content, asset.mime_type) for asset in result.assets]
                 with engine.begin() as conn:
+                    # この行をロックしたまま本文も同じ取引で確定する。
+                    _finish_job(conn, job_id, result.processing_status)
                     summary = _save_payload(conn, generation_id, result, chunks, stored)
                     save_extraction(conn, cache_key, original.asset_id, profile["extraction_revision"], result, stored)
-                    _finish_job(conn, job_id, result.processing_status)
-                    conn.execute(kb.update().where(kb.c.knowledge_id == settings.knowledge_id)
-                                 .values(catalog_revision=kb.c.catalog_revision + 1))
+                    _advance_catalog(conn, select(selection.c.knowledge_id).where(
+                        selection.c.generation_id == generation_id))
                 job_id = None
                 entry.update(status="registered", processing_status=result.processing_status, **summary)
                 try:
@@ -651,20 +693,21 @@ def ingest(settings: Settings, engine: Engine, *, retry_partial: bool = False,
                 entry.update(error_code=code, processing_status="failed")
                 with engine.begin() as conn:
                     if stage == "collect":
-                        conn.execute(docs.update().where(docs.c.document_id == item.document_id)
-                                     .values(source_status="unavailable"))
-                        conn.execute(members.update().where(
-                            members.c.knowledge_id == settings.knowledge_id,
-                            members.c.document_id == item.document_id,
-                        ).values(collection_status="failed", last_error_code=code))
+                        if _set_collection_state(conn, settings.knowledge_id, item.document_id, "failed", code):
+                            _advance_catalog(conn, [settings.knowledge_id])
                     elif generation_id:
                         conn.execute(generations.update().where(
                             generations.c.generation_id == generation_id
                         ).values(processing_status="failed", quality_summary={"error_code": code}))
                     if stage == "convert":
-                        conn.execute(members.update().where(
-                            members.c.knowledge_id == settings.knowledge_id,
-                            members.c.document_id == item.document_id).values(last_error_code=code))
+                        if generation_id is None:
+                            selection = tables["selected_generations"]
+                            conn.execute(selection.update().where(
+                                selection.c.knowledge_id == settings.knowledge_id,
+                                selection.c.document_id == item.document_id,
+                            ).values(generation_id=None))
+                        _set_collection_state(conn, settings.knowledge_id, item.document_id, "available", code)
+                        _advance_catalog(conn, [settings.knowledge_id])
                     if job_id:
                         _finish_job(conn, job_id, "failed", code)
             report["files"].append(entry)

@@ -313,6 +313,53 @@ def test_generated_document_handoff_rejects_directory_name_exclusions(source_pro
         _configuration(settings)
 
 
+@pytest.mark.parametrize(("output", "relative_path"), [
+    ("storage_dir", "handoff/previous/storage"),
+    ("report_dir", "handoff/pending/reports"),
+    ("storage_dir", "handoff"),
+    ("report_dir", "."),
+    ("bound_storage", "handoff/previous/storage"),
+    ("sqlite_database", "handoff/pending/database"),
+])
+def test_handoff_rejects_overlapping_outputs_before_recovery(source_project, tmp_path, output, relative_path):
+    settings = _ingestion_config(source_project, tmp_path)
+    adapter = FixtureCodeWiki()
+    generation = generate(settings, analyze(settings, adapter=adapter)["analysis_id"], adapter=adapter)
+    output_path = settings.artifact_root / relative_path
+    output_path.mkdir(parents=True, exist_ok=True)
+    marker = output_path / "keep.txt"
+    marker.write_bytes(b"existing output")
+    journal = settings.artifact_root / "state/handoff-journal.json"
+    interrupted = {"phase": "preparing", "had_current": False}
+    write_json(journal, interrupted)
+
+    db_path = output_path / "db.sqlite" if output == "sqlite_database" else tmp_path / "documents.sqlite"
+    engine = open_database("sqlite:///" + str(db_path))
+    migrate(engine)
+    try:
+        if output == "sqlite_database":
+            error = "ingestion_output_overlaps_handoff"
+        elif output == "bound_storage":
+            with engine.begin() as conn:
+                conn.execute(tables["ingestion_settings"].insert(),
+                             {"singleton_id": 1, "storage_root": str(output_path)})
+            error = "existing_database_storage_root_mismatch"
+        else:
+            raw = yaml.safe_load(settings.file_scan_config.read_text(encoding="utf-8"))
+            raw[output] = str(output_path)
+            settings.file_scan_config.write_text(yaml.safe_dump(raw), encoding="utf-8")
+            error = "ingestion_output_overlaps_handoff"
+
+        with pytest.raises(ScanError, match=error):
+            ingest(settings, generation["generation_id"], engine=engine)
+        assert marker.read_bytes() == b"existing output"
+        assert read_json(journal) == interrupted
+        with engine.connect() as conn:
+            assert conn.execute(select(tables["documents"])).first() is None
+    finally:
+        engine.dispose()
+
+
 def test_real_existing_ingestion_is_used_and_stable(source_project, tmp_path):
     settings = _ingestion_config(source_project, tmp_path)
     adapter = FixtureCodeWiki()

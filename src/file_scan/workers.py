@@ -10,6 +10,12 @@ from pathlib import Path
 ACTIVE_POOL: ContextVar = ContextVar("file_scan_parser_pool", default=None)
 
 
+def parse_timeout(settings, file_format):
+    if file_format == "pdf" and settings.pdf_backend == "docling" and settings.pdf_ocr.enabled:
+        return settings.pdf_ocr.timeout_seconds
+    return settings.parse_timeout_seconds
+
+
 class WorkerError(RuntimeError):
     def __init__(self, code):
         self.code = code
@@ -107,10 +113,7 @@ class ParsePool:
         process, channel, tasks = self.slots[index]
         try:
             channel.send((str(asset.path), item.format))
-            timeout = (self.settings.pdf_ocr.timeout_seconds
-                       if item.format == "pdf" and self.settings.pdf_backend == "docling"
-                       and self.settings.pdf_ocr.enabled else self.settings.parse_timeout_seconds)
-            if not channel.poll(timeout):
+            if not channel.poll(parse_timeout(self.settings, item.format)):
                 raise WorkerError("parse_timeout")
             success, result, memory = channel.recv()
             if memory is None:

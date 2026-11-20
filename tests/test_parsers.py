@@ -186,6 +186,35 @@ def test_excel_keeps_image_bytes_and_anchor_for_later_analysis(tmp_path: Path):
     assert result.processing_status == "partial"
 
 
+def test_excel_hidden_picture_is_excluded_from_recognition(tmp_path):
+    from file_scan.office_render import _copy_render_input
+
+    book = Workbook()
+    book.active["A1"] = "visible"
+    for anchor in ("A2", "A3"):
+        book.active.add_image(Image(io.BytesIO(PNG)), anchor)
+    original = tmp_path / "visible.xlsx"
+    book.save(original)
+    source = tmp_path / "hidden.xlsx"
+    with ZipFile(original) as incoming, ZipFile(source, "w") as outgoing:
+        for part in incoming.namelist():
+            data = incoming.read(part)
+            if part == "xl/drawings/drawing1.xml":
+                drawing = ET.fromstring(data)
+                drawing[0].find(".//xdr:cNvPr", parsers.NS).set("hidden", "1")
+                data = ET.tostring(drawing)
+            outgoing.writestr(part, data)
+    for include_hidden, expected_rows in [(False, [3]), (True, [2, 3])]:
+        result = parse_file(source, "xlsx", include_hidden=include_hidden)
+        assert [asset.source_locations[0]["anchor_row"] for asset in result.assets] == expected_rows
+        assert result.pending_images == len(expected_rows)
+        preview = tmp_path / "preview.xlsx"
+        _copy_render_input(source, preview, result.metrics.get("hidden_drawing_parts", []))
+        with ZipFile(preview) as package:
+            drawing = ET.fromstring(package.read("xl/drawings/drawing1.xml"))
+            assert len(drawing.findall(".//xdr:pic", parsers.NS)) == len(expected_rows)
+
+
 def test_word_keeps_heading_paragraph_table_and_image_order(tmp_path: Path):
     source = tmp_path / "manual.docx"
     document = Document()

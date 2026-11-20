@@ -364,14 +364,28 @@ def _parse_excel(path: Path, *, include_hidden: bool) -> ExtractionResult:
                         content_data={"cells": records, "headers": headers, "header_detection": header_method},
                         quality_flags=sorted(set(row_flags)), extraction_method="openpyxl",
                     ))
-                _excel_images(result, package, part, sheet.title, sheet_id)
+                _excel_images(result, package, part, sheet.title, sheet_id, include_hidden=include_hidden)
         finally:
             formulas.close()
             cached.close()
     return result
 
 
-def _excel_images(result: ExtractionResult, package: ZipFile, part: str, sheet_name: str, parent_id: str) -> None:
+def _omit_hidden_drawings(parent: ET.Element) -> bool:
+    """非表示の図形とグループは、その配下の画像も対象から外す。"""
+    omitted = False
+    for child in list(parent):
+        properties = child.find("./*/xdr:cNvPr", NS)
+        if properties is not None and properties.get("hidden") in {"1", "true"}:
+            parent.remove(child)
+            omitted = True
+        else:
+            omitted |= _omit_hidden_drawings(child)
+    return omitted
+
+
+def _excel_images(result: ExtractionResult, package: ZipFile, part: str, sheet_name: str, parent_id: str, *,
+                  include_hidden: bool) -> None:
     """openpyxlの非公開属性に依存せず、OOXMLから画像の位置と実体を取る。"""
     root = ET.fromstring(package.read(part))
     sheet_rels = _relationships(package, part)
@@ -389,6 +403,10 @@ def _excel_images(result: ExtractionResult, package: ZipFile, part: str, sheet_n
             if start is not None:
                 location["anchor_row"] = int(start.findtext("xdr:row", "0", NS)) + 1
                 location["anchor_column"] = int(start.findtext("xdr:col", "0", NS)) + 1
+            if not include_hidden and _omit_hidden_drawings(anchor):
+                parts = result.metrics.setdefault("hidden_drawing_parts", [])
+                if drawing_part not in parts:
+                    parts.append(drawing_part)
             for image_index, blip in enumerate(anchor.findall(".//a:blip", NS), 1):
                 image_rel = drawing_rels.get(blip.attrib.get(f"{{{R}}}embed", ""), {})
                 image_part = _part_target(drawing_part, image_rel["Target"]) if image_rel and image_rel.get("TargetMode") != "External" else None
