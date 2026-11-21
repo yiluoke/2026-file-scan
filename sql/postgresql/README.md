@@ -1,12 +1,12 @@
 # 現行スキーマv3の新規導入用SQL
 
-Python・ライブラリ・DBサーバー・モデルを含む導入全体は[環境構築手順](../../docs/implementation/environment-setup.md)を参照する。
+Python・ライブラリ・DBサーバー・モデルを含む導入全体は[環境構築手順](../../docs/file-scan/本番導入仕様.md)を参照する。
 
 [schema-v3.sql](schema-v3.sql)は、現在実装されている20テーブル、PK・UNIQUE・CHECK・外部キー、12個の明示索引を作成する。`pgvector`の有効化と`schema_migrations`へのv3適用記録も含む。検索専用のsearch_*テーブルと将来のACL表は含めない。検索表はfile-search init-dbで同じwinnap内に作成する。
 
 正本は[src/file_scan/db.py](../../src/file_scan/db.py)。このSQLは[scripts/export_postgres_schema.py](../../scripts/export_postgres_schema.py)で実装定義から生成する。文書データ・原本・画像・APIキー・DBユーザー・パスワードは含めない。
 
-2026-11-02：アプリテーブルの作成先を専用スキーマ`winnap`へ変更した。取込・検索の配置と旧`public`からの移行は[専用スキーマの手順](../../docs/implementation/winnap-schema.md)を参照。
+2026-11-02：アプリテーブルの作成先を専用スキーマ`winnap`へ変更した。取込・検索の配置と旧`public`からの移行は[既存DBの移行手順](../../docs/file-scan/本番導入仕様.md#recovery)を参照。
 
 ## 導入手順
 

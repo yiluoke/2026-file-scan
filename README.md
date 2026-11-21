@@ -2,23 +2,13 @@
 
 部署内の維持管理システムに関する設計書、マニュアル、問い合わせ記録、障害対応記録を横断して調査・相談するナレッジ基盤。
 
-第1版は、ファイルサーバー等の指定フォルダを収集し、文書構造・原本位置・チャンクをDBへ**下書き登録するCLI**を提供する。検索・AI回答を接続する前に、何を取り込めたかと抽出不足を確認するための実装である。
-
-2026-10-25更新：取り込みの8改善を適用。変更仕様と既存DBの移行方法は[取り込み改善設計（v3）](docs/design/05-ingestion-improvements.md)を参照。
-
-2026-11-01：取込対象をWord（DOCX）・Excel（XLSX/XLSM）・PDF・TXT・Markdownに限定した。プログラム解析は別処理で設計・実装するため、本処理には含めない。SQL・JSON・YAML・YML・CSV・LOGも原本の取込対象外とする。YAMLの実行設定、JSON/JSONLの確認用出力、DB用SQLは引き続き使用する。
-
-図解は[ファイル取込処理の説明資料](docs/explanation/README.md)、対象範囲の変更と既存環境への適用は[文書形式への限定](docs/implementation/document-only-ingestion.md)を参照。
-
-2026-11-02：取込・検索のDBテーブルを専用スキーマ`winnap`へ配置する。新規作成と既存`public`からのデータ保持移行は[専用スキーマの手順](docs/implementation/winnap-schema.md)を参照。pgvectorの配置は`public`のまま維持する。
+文書とC++・Qtソースから下書きを作り、管理者が公開した資料を検索APIで参照します。機能別の仕様書・機能説明資料・本番導入仕様は[ドキュメント一覧](docs/README.md)から選べます。
 
 ## 最初に動かす
 
-別環境へ導入する場合は、[環境構築手順](docs/implementation/environment-setup.md)を参照。Pythonと必要ライブラリ、DB・テーブル、モデル、認証設定、公開サンプルによる確認を順にまとめている。Windows PowerShellと閉域環境の手順も記載する。
+本番構成はWindowsホスト上のUbuntu 26.04 VM、Python 3.14です。共通環境、モデル、DB、収集元の配置は[文書取込の本番導入仕様](docs/file-scan/本番導入仕様.md)を参照してください。
 
-本番導入先は**Windowsホスト上のUbuntu 26.04 VM**。[Ubuntu VM専用の構築・起動手順](docs/implementation/ubuntu-26.04-vm.md)にUbuntu標準Python 3.14の準備、DB拡張、共有フォルダのマウント、起動時の確認をまとめている。
-
-Ubuntu 26.04の標準版に合わせ、Python 3.14（確認版3.14.4）を使用する。[版の対応表と互換例外](docs/implementation/ubuntu-26.04-python.md)も参照。以下はmacOS／Linuxのシェル例。
+以下はmacOS／Linuxのシェル例。
 
 ```sh
 python3.14 -m venv .venv
@@ -45,7 +35,7 @@ sources:
 
 除外フォルダの内部は探索せず、`scan`のレポートへフォルダ単位で`excluded_directory`を記録する。先に`scan`で対象を確認してから`ingest`へ進む。取り込み済み文書が除外条件に一致した場合は、次回`ingest`で対象外となり、保存済みの履歴は残る。
 
-ローカル検証も **PostgreSQL 18＋pgvector** を使用する。先に[ローカルDBの導入・起動手順](docs/implementation/local-postgresql.md)でDBと`.env`を準備する。原本・画像は`artifacts/storage`、レポートは`artifacts/reports`へ保存する。DB起動後、接続情報を読み込んで次の順序で実行する。
+ローカル検証も **PostgreSQL 18＋pgvector** を使用する。先に[ローカル検証環境の構築記録](docs-backup-2026-11-20/implementation/local-postgresql.md)でDBと`.env`を準備する。原本・画像は`artifacts/storage`、レポートは`artifacts/reports`へ保存する。DB起動後、接続情報を読み込んで次の順序で実行する。
 
 ```sh
 set -a
@@ -74,9 +64,9 @@ Windowsでは仮想環境の有効化に`.venv\Scripts\Activate.ps1`を使う。
 
 文書取込とは別の`cpp-scan`を追加した。`scan` → `analyze` → `generate` → `ingest`の順に、ソース棚卸し、原本固定・CodeWiki構造解析・Qt補完、日本語Markdown生成、既存file-scanでの下書き登録を行う。`.pro`の詳細評価やビルドは必須にしない。
 
-固定コミットのCodeWikiを、文書取込と同じPython 3.14の仮想環境に導入する。生成後の分割・DB登録・Embeddingは既存処理を使用し、Embeddingと検索公開は別途明示実行する。[導入・操作手順](docs/implementation/cpp-source-ingestion.md)・[ソース解析設定例](config.cpp-source.example.yaml)・[生成文書の取込設定例](config.cpp-docs.example.yaml)
+固定コミットのCodeWikiを、文書取込と同じPython 3.14の仮想環境に導入する。生成後の分割・DB登録・Embeddingは既存処理を使用し、Embeddingと検索公開は別途明示実行する。[導入・操作手順](docs/cpp-scan/本番導入仕様.md)・[ソース解析設定例](config.cpp-source.example.yaml)・[生成文書の取込設定例](config.cpp-docs.example.yaml)
 
-仕組みは[C++／Qtソース取込処理の図解PDF](output/pdf/C++・Qtソース取込処理_図解ガイド.pdf)で説明している。[Markdown版](docs/explanation/C++・Qtソース取込処理_図解ガイド.md)も同じ本文と図を含む。
+解析結果と生成物の読み方は[C++・Qtソース取込の機能説明資料](docs/cpp-scan/機能説明資料.md)を参照。
 
 ## 第1版の対応範囲
 
@@ -91,7 +81,7 @@ DoclingによるPDFの段組み・表・領域座標は抽出するが、全原�
 
 収集対象はTXT・MD・XLSX・XLSM・DOCX・PDF。Markdownの別拡張子`.markdown`も明示設定できる。`include_extensions`は対応文書形式の部分集合だけを受け付け、プログラム・SQL・JSON・YAML・YML・CSV・LOG等の追加は設定エラーにする。
 
-DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`は文書を抽出し、画像認識を有効にした場合は対象画像の説明を生成する。`embed`は有効時に検索用テキストを外部APIへ送信する。Dify本体、利用者別ACL、レビュー承認画面は未実装。検索APIと管理者コマンドによる明示公開は[検索APIの操作手順](docs/implementation/search-api.md)へ追加した。取り込みデータのdraftは維持する。
+DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・pgvector保存に対応**。APIキー・モデル・次元数を設定できる。初期設定は仮キーを入れて無効化している。`ingest`は文書を抽出し、画像認識を有効にした場合は対象画像の説明を生成する。`embed`は有効時に検索用テキストを外部APIへ送信する。Dify本体、利用者別ACL、レビュー承認画面は未実装。管理者が採用した世代は検索用のコピーに公開し、取込データは下書きのまま保持する。公開条件と操作は[検索APIの仕様書](docs/file-search/仕様書.md)を参照。
 
 チャンク本文は既定1800文字以内、見出し・列見出しを含む検索入力は既定8191トークン以内に分割する。`cl100k_base`の実測値を`chunks.token_count`と`chunk_embeddings.input_tokens`へ保存する。表は行を優先し、後続チャンクの検索文脈にも列見出しを引き継ぐ。
 
@@ -107,17 +97,17 @@ DB登録は`draft`のみ。**OpenAI Embeddings APIによるベクトル生成・
 file-scan ingest --config config.local.yaml --retry-partial
 ```
 
-画像認識は既定で無効。対象形式と外部送信の有効化は[画像認識の手順](docs/implementation/image-analysis.md)を参照。
+画像認識は既定で無効。対象形式と外部送信の有効化は[画像の説明に使う設定](docs/file-scan/仕様書.md#画像の説明)を参照。
 
 ## OpenAI Embeddingとファイルサーバー
 
-[設定・公開サンプル・検証手順](docs/implementation/openai-embedding.md)を参照。実キーを`.env`の`OPENAI_API_KEY`または`config.local.yaml`の`embedding.api_key`へ設定し、`embedding.enabled: true`へ変更して`file-scan embed --config config.local.yaml`を実行する。既定モデルは`text-embedding-3-small`、1536次元。仮キーではAPIを呼ばず設定エラーにする。
+[設定・公開サンプル・検証手順](docs/file-scan/本番導入仕様.md)を参照。実キーを`.env`の`OPENAI_API_KEY`または`config.local.yaml`の`embedding.api_key`へ設定し、`embedding.enabled: true`へ変更して`file-scan embed --config config.local.yaml`を実行する。既定モデルは`text-embedding-3-small`、1536次元。仮キーではAPIを呼ばず設定エラーにする。
 
 ## PostgreSQL＋pgvectorとDocling
 
 別環境への新規導入用DDLは[sql/postgresql/schema-v3.sql](sql/postgresql/schema-v3.sql)。現行20テーブル・制約・12索引・pgvector有効化・スキーマ版登録を含む。[SQLの実行手順](sql/postgresql/README.md)を参照する。
 
-標準設定はPostgreSQLを使用する。[ローカルDBの手順](docs/implementation/local-postgresql.md)にmacOS用Postgres.appと[Compose](compose.yaml)の導入・起動・停止方法を記載する。Composeもpgvectorを含み、開発用とテスト用のDBで拡張を有効化する。DB接続先は`FILE_SCAN_DATABASE_URL`環境変数でYAMLより優先して指定できる。認証情報をGitへ登録しない。`.env.example`は設定例であり、Python CLIは`.env`を自動で読み込まない。
+標準設定はPostgreSQLを使用する。[ローカルDBの構築記録](docs-backup-2026-11-20/implementation/local-postgresql.md)にmacOS用Postgres.appと[Compose](compose.yaml)の導入・起動・停止方法を記載する。Composeもpgvectorを含み、開発用とテスト用のDBで拡張を有効化する。DB接続先は`FILE_SCAN_DATABASE_URL`環境変数でYAMLより優先して指定できる。認証情報をGitへ登録しない。`.env.example`は設定例であり、Python CLIは`.env`を自動で読み込まない。
 
 PDFは**Doclingの実モデルによるレイアウト・表構造抽出**を標準とする。Doclingは通常の依存に含む。初回に次を実行してモデルを事前取得する。
 
@@ -135,9 +125,9 @@ pdf_ocr:
   timeout_seconds: 1800
 ```
 
-日本語RapidOCR 3.9.1＋ONNX Runtime 1.24.1をCPUで実行する。`pdf_ocr.enabled`の既定値は`true`、`mode`は`auto`、期限は1800秒。モデルの不足・改変を実行前に検出する。PDFのOCR本文も既存チャンク・Embedding経路を使用する。図の説明は設定で有効にできる。詳細は[Doclingの導入・抽出・検証](docs/implementation/docling-pdf.md)を参照。
+日本語RapidOCR 3.9.1＋ONNX Runtime 1.24.1をCPUで実行する。`pdf_ocr.enabled`の既定値は`true`、`mode`は`auto`、期限は1800秒。モデルの不足・改変を実行前に検出する。PDFのOCR本文も既存チャンク・Embedding経路を使用する。図の説明は設定で有効にできる。詳細は[モデルの導入・検証手順](docs/file-scan/本番導入仕様.md#configuration)を参照。
 
-PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。新規環境は[導入手順](docs/implementation/pgroonga.md)を参照。現在のComposeイメージはpgvectorのみ。検索APIは権限制御を保留したローカル試作として実装済み。[操作・公開・Dify接続手順](docs/implementation/search-api.md)を参照。
+PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。新規環境は[導入手順](docs/file-search/本番導入仕様.md)を参照。現在のComposeイメージはpgvectorのみ。検索APIは権限制御を保留したローカル試作として実装済み。[操作・公開・Dify接続手順](docs/file-search/仕様書.md)を参照。
 
 ## コードを読む順序
 
@@ -159,9 +149,9 @@ PGroonga 4.1.0をローカルのアプリ用・テスト用DBへ導入済み。�
 
 ## 検索API
 
-本番導入は[検索APIの本番環境構築手順](docs/implementation/search-api-production.md)を参照。Ubuntu VMでのDB・設定・公開管理、systemd常駐化、NginxによるHTTPS接続、受入確認・復旧までをまとめている。
+本番導入は[検索APIの本番環境構築手順](docs/file-search/本番導入仕様.md)を参照。Ubuntu VMでのDB・設定・公開管理、systemd常駐化、NginxによるHTTPS接続、受入確認・復旧までをまとめている。
 
-仕組みを図で理解する場合は[検索APIの図解PDF](output/pdf/検索API_図解ガイド.pdf)を参照。[Markdown版](docs/explanation/検索API_図解ガイド.md)も同じ内容で、現行コードへの根拠リンクを付けている。
+検索結果の順位・出典・公開状態の読み方は[検索APIの機能説明資料](docs/file-search/機能説明資料.md)を参照。
 
 取り込みCLIから独立した`file-search`を追加した。ソースは取り込みが`src/file_scan/`、検索が`src/search/`の並列構成とする。上記の固定依存の導入には検索用extraも含まれる。取り込みv3の初期化後に次を実行する。
 
@@ -170,27 +160,13 @@ file-search init-db --config config.local.yaml
 file-search create-release --config config.local.yaml --release '<対象業務版>'
 ```
 
-確認した文書・世代を`file-search publish`で明示公開し、`FILE_SCAN_SEARCH_API_KEY`を設定して`file-search serve --config config.local.yaml`で起動する。管理者コマンド、入力例、実Embedding設定、Dify接続は[検索APIの操作手順](docs/implementation/search-api.md)を参照。
+確認した文書・世代を`file-search publish`で明示公開し、`FILE_SCAN_SEARCH_API_KEY`を設定して`file-search serve --config config.local.yaml`で起動する。管理者コマンド、入力例、実Embedding設定、Dify接続は[検索APIの管理CLI](docs/file-search/仕様書.md#管理cli)と[Dify接続手順](docs/file-search/本番導入仕様.md#dify)を参照。
 
 誤公開は`file-search unpublish`で指定した業務版から取り下げられる。検索結果の`source_ref`と`related_assets[].image_ref`は、同じ接続キーで原本と対応画像を取得するための参照先となる。
 
 検索表は取り込みv3と別の版で追加する。既存のdraft・世代選択・キャッシュは維持し、既存資料を自動公開しない。開発DBには検索表のみを追加済み。
 
-DBを使わずAPI接続を試す場合は、`search.test_mode: true`を設定して起動する。[テスト用設定](config.search-test.example.yaml)と[起動・応答の説明](docs/implementation/search-api.md#dbを使わないapiテストモード)を参照。固定のテスト文言を返し、DB検索・Embeddingは実行しない。
-
-## 設計資料
-
-| 機能 | 資料 | 設計レベル |
-| --- | --- | --- |
-| 1. 文書変換処理 | [文書変換処理](docs/design/01-document-conversion.md) | 詳細設計案 |
-| 2. 検索基盤・API | [検索基盤・検索API](docs/design/02-search-platform.md) | 検索処理・API契約の設計案 |
-| 3. LLM＋チャット画面 | [LLM＋チャット画面](docs/design/03-llm-chat.md) | 概要設計案 |
-| 4. C++／Qt 5ソース解析取込 | [初期版仕様](docs/design/09-cpp-qt-source-ingestion-spec.md) | 収集・CodeWiki連携・Qt補完・日本語仕様書・既存取込接続を実装。[操作手順](docs/implementation/cpp-source-ingestion.md) |
-| 共通. データベース | [テーブル設計](docs/design/04-database-tables.md) | 論理・カラム・制約・索引の詳細設計案 |
-
-検索APIの見直しと参考にした実装は[GitHub検索API比較](docs/research/2026-10-25-github-search-api-comparison.md)を参照。検索APIと検索専用コピーへの明示公開は実装済み。文書ACL・SSOは保留。
-
-設計資料は最終構成の設計案を含む。第1版の実装範囲と制限は本READMEと[操作・実装説明](docs/implementation/first-version.md)を参照し、設計に記載した機能がすべて実装済みとは扱わない。社内実データによる抽出精度・処理性能の検証は今後行う。
+DBを使わずAPI接続を試す場合は、`search.test_mode: true`を設定して起動する。[テスト用設定](config.search-test.example.yaml)と[起動・応答の説明](docs/file-search/仕様書.md#dbを使わない接続試験)を参照。固定のテスト文言を返し、DB検索・Embeddingは実行しない。
 
 ## 想定構成
 

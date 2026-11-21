@@ -1,6 +1,6 @@
 # Ubuntu 26.04 (resolute + updates + security), checked 2026-10-25.
 # Upstream versions; Ubuntu revision suffixes are not PyPI versions.
-# See ubuntu-26.04-baseline.json and ../docs/implementation/ubuntu-26.04-python.md.
+# See ubuntu-26.04-baseline.json and ../docs-backup-2026-11-20/implementation/ubuntu-26.04-python.md.
 # Ubuntu版との互換例外およびCodeWiki統合で更新した版は実装手順を参照。
 Jinja2==3.1.6
 MarkupSafe==3.0.3
